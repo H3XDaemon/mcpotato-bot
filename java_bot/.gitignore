@@ -1,0 +1,13 @@
+/node_modules
+
+/build
+/dist
+
+/profiles
+
+*.log
+*.zip
+*.7z
+
+# 作業系統特定檔案
+.DS_Store

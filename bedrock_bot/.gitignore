@@ -1,0 +1,16 @@
+# 依賴套件
+/node_modules
+
+# 機器人設定檔 (敏感資訊)
+/profiles
+
+# 日誌檔案
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 其他
+.DS_Store
+.env

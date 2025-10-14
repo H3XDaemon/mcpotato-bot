@@ -1,0 +1,28 @@
+[
+  {
+    "enabled": true,
+    "botTag": "OnlineBot_1",
+    "host": "localhost",
+    "port": 19132,
+    "offline": false,
+    "profilePath": "./profiles/online_bot1",
+    "autoWithdraw": {
+      "enabled": false,
+      "intervalMinutes": 5,
+      "withdrawThreshold": 1135
+    }
+  },
+  {
+    "enabled": true,
+    "botTag": "OnlineBot_2",
+    "host": "localhost",
+    "port": 19132,
+    "offline": false,
+    "profilePath": "./profiles/online_bot2",
+    "autoWithdraw": {
+      "enabled": false,
+      "intervalMinutes": 5,
+      "withdrawThreshold": 3500
+    }
+  }
+]

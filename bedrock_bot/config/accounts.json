@@ -1,0 +1,28 @@
+[
+  {
+    "enabled": true,
+    "botTag": "OnlineBot_1",
+    "host": "be.mcpotato.xyz",
+    "port": 19132,
+    "offline": false,
+    "profilePath": "./profiles/online_bot1",
+    "autoWithdraw": {
+      "enabled": true,
+      "intervalMinutes": 4.8,
+      "withdrawThreshold": 1135
+    }
+  },
+  {
+    "enabled": true,
+    "botTag": "OnlineBot_2",
+    "host": "be.mcpotato.xyz",
+    "port": 19132,
+    "offline": false,
+    "profilePath": "./profiles/online_bot2",
+    "autoWithdraw": {
+      "enabled": true,
+      "intervalMinutes": 4.9,
+      "withdrawThreshold": 3500
+    }
+  }
+]

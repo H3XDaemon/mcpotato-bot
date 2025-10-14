@@ -1,0 +1,23 @@
+# 定義服務 (Services)
+services:
+  # 服務名稱，可自訂
+  minecraft-bot:
+    # 指示 Docker Compose 使用當前目錄的 Dockerfile 來建置映像檔
+    build: .
+    # 為運行的容器指定一個好記的名稱
+    container_name: bedrock_bot
+    # 設定重啟策略：除非手動停止，否則容器在退出後會自動重啟
+    restart: unless-stopped
+    # 掛載磁碟區 (Volumes)，這是實現資料持久化和外部設定的關鍵
+    volumes:
+      # 將主機當前路徑下的 config 資料夾掛載到容器內的 /usr/src/app/config
+      # 如此一來，您可以直接在主機上修改設定，而無需重新建置映像檔
+      - ./config:/usr/src/app/config:ro
+      # 將主機的 profiles 資料夾掛載到容器內，用來保存機器人的登入快取等資料
+      # :ro 表示唯讀 (read-only)，確保容器不會意外修改設定檔
+      - ./profiles:/usr/src/app/profiles
+    # 開啟標準輸入 (stdin)，讓您可以與容器內的機器人控制台進行互動
+    stdin_open: true
+    # 分配一個虛擬終端 (TTY)，這對於互動式主控台是必要的
+    tty: true
+

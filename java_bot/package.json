@@ -1,0 +1,25 @@
+{
+  "name": "minecraft-bot-java-secure",
+  "version": "1.2.5",
+  "description": "一個以安全性與穩定性為優先的單檔案 Minecraft Java 版機器人，並整合了網頁監看功能。",
+  "main": "java_bot_secure.js",
+  "scripts": {
+    "start": "node java_bot_stable.js",
+    "dev": "cross-env NODE_ENV=test node java_bot_test.js"
+  },
+  "keywords": [
+    "minecraft",
+    "bot",
+    "java",
+    "mineflayer",
+    "viewer"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cross-env": "^10.0.0",
+    "mineflayer": "^4.0.0",
+    "mineflayer-tps": "^1.0.1",
+    "node-fetch": "^3.3.2"
+  }
+}

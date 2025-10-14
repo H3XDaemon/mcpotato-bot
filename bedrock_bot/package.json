@@ -1,0 +1,20 @@
+{
+  "name": "minecraft-bot-modular",
+  "version": "2.0.0",
+  "description": "一個模組化的 Minecraft Bedrock 機器人，具備健壯的連線、ATM 與 Home 功能。",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "keywords": [
+    "minecraft",
+    "bot",
+    "bedrock"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bedrock-protocol": "^3.47.0",
+    "minecraft-data": "^3.93.0"
+  }
+}

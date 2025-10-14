@@ -1,0 +1,12 @@
+[
+  {
+    "enabled": true,
+    "botTag": "JavaBot_1",
+    "host": "localhost",
+    "port": 25565,
+    "version": "1.21.8",
+    "username": "devxeno",
+    "enableViewer": false,
+    "startWorkOnLogin": true
+  }
+]

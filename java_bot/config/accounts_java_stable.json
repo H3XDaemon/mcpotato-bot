@@ -1,0 +1,22 @@
+[
+  {
+    "enabled": true,
+    "botTag": "JavaBot_1",
+    "host": "mcpotato.xyz",
+    "port": 25565,
+    "version": "1.21.8",
+    "username": "devxeno",
+    "enableViewer": false,
+    "startWorkOnLogin": false
+  },
+  {
+    "enabled": true,
+    "botTag": "JavaBot_2",
+    "host": "mcpotato.xyz",
+    "port": 25565,
+    "version": "1.21.8",
+    "username": "void",
+    "enableViewer": false,
+    "startWorkOnLogin": true
+  }
+]
