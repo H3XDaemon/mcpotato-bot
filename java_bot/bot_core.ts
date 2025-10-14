@@ -1,4 +1,3 @@
-
 import * as path from 'path';
 import * as readline from 'readline';
 import * as util from 'util';
@@ -191,7 +190,7 @@ const OMEN_REAPPLY_DELAY = 1500; // 效果結束後重新使用的延遲 (1.5秒
 
 class BotJava {
     config: any;
-    client: any;
+    client: mineflayer.Bot | null;
     state: { status: string; };
     reconnectTimeout: NodeJS.Timeout | null;
     viewer: { port: number | null; instance: any | null; };
@@ -321,7 +320,7 @@ class BotJava {
     }
 
     async startViewer(viewerModule: any, canvasModule: any) {
-        if (!this.config.enableViewer) return;
+        if (!this.config.enableViewer || !this.client) return;
         if (this.viewer.instance) {
             this.logger.warn('監看視窗已經在運行中。');
             return;
@@ -406,6 +405,7 @@ class BotJava {
             }
 
             return targetEffects.some(effect => {
+                if (!this.client) return false;
                 const hasEffect = this.client.entity.effects[effect.id] !== undefined;
                 if(hasEffect) {
                     this.logger.debug(`偵測到已存在效果: ${effect.name}，無需使用瓶子。`);
@@ -442,13 +442,17 @@ class BotJava {
 
                         // --- [優化] 使用事件驅動的方式等待效果，而非固定延遲 ---
                         const effectAppliedPromise = new Promise((resolve) => {
+                            if (!this.client) {
+                                resolve(false);
+                                return;
+                            }
                             const mcData = require('minecraft-data')(this.client.version);
                             const targetEffectIds = ['TrialOmen', 'BadOmen']
                                 .map(name => mcData.effectsByName[name]?.id)
                                 .filter(Boolean);
 
                             const onEffect = (entity: any, effect: any) => {
-                                if (entity === this.client.entity && targetEffectIds.includes(effect.id)) {
+                                if (this.client && entity === this.client.entity && targetEffectIds.includes(effect.id)) {
                                     clearTimeout(timeout); // 清除超時計時器
                                     this.client.removeListener('entityEffect', onEffect);
                                     resolve(true);
@@ -457,7 +461,9 @@ class BotJava {
 
                             // 設定一個 5 秒的超時，以防萬一伺服器沒有回應
                             const timeout = setTimeout(() => {
-                                this.client.removeListener('entityEffect', onEffect);
+                                if (this.client) {
+                                    this.client.removeListener('entityEffect', onEffect);
+                                }
                                 resolve(false);
                             }, 5000);
 
@@ -491,77 +497,72 @@ class BotJava {
         }
     }
 
-
     _setupEventListeners() {
+        if (!this.client) return;
+
         this.client.on('login', () => {
-            this.logger.info(`使用帳號 ${this.client.username} 成功登入認證伺服器。`);
+            if (!this.client) return;
+            this.state.status = 'ONLINE';
+            this.logger.info(`✅ 成功登入到 ${this.config.host}:${this.config.port}，玩家名稱: ${this.client.username}`);
+            this.lastSuccessfulLoginTime = Date.now();
+            this.consecutiveConnectionFails = 0;
+            this.connectionGlitchHandled = false;
+
+            if (this.tpsMonitor) {
+                this.tpsMonitor.start();
+            }
+
+            if (this.config.startWorkOnLogin) {
+                this.startWork();
+            }
+
+            if (this.config.antiAfk.enabled) {
+                if (this.antiAfkInterval) clearInterval(this.antiAfkInterval);
+                this.antiAfkInterval = setInterval(() => {
+                    if (this.client) {
+                        this.client.swingArm('left');
+                        this.logger.info('[Anti-AFK] 執行了一次揮手操作。');
+                    }
+                }, this.config.antiAfk.intervalMinutes * 60 * 1000);
+                this.logger.info(`Anti-AFK 功能已啟用，每 ${this.config.antiAfk.intervalMinutes} 分鐘會自動揮手。`);
+            }
         });
 
         this.client.on('spawn', async () => {
-            this.lastKnownEffects.clear();
-            //this.ominousTrialKeyDrops = 0;
-            // ++ 新增 ++ 重生或重連時清空已處理列表
-            //this.processedDropEntities.clear();
-            //this.logger.info('ominous_trial_key 掉落計數器已重置。');
-
-            if (this.state.status === 'CONNECTING') {
-                this.state.status = 'ONLINE';
-                this.logger.info('✅ 成功登入伺服器！');
-                this.lastSuccessfulLoginTime = Date.now();
-                this.connectionGlitchHandled = false;
-
-                if (this.tpsMonitor) {
-                    this.tpsMonitor.start(); // Safely start the time-based TPS monitoring
+            if (!this.client) return;
+            this.logger.info('機器人已在遊戲世界中生成。');
+            await sleep(2000);
+            if (this.client) {
+                this.logger.info(`目前位置: ${this.client.entity.position}`);
+            }
+            if (this.config.enableViewer) {
+                // Dynamically import viewer dependencies only when needed
+                try {
+                    const viewerModule = require('prismarine-viewer').mineflayer;
+                    const { Canvas } = require('canvas');
+                    await this.startViewer(viewerModule, { Canvas });
+                } catch (e: any) {
+                    this.logger.error(`無法加載監看視窗模組: ${e.message}`);
+                    this.logger.warn('請執行 "npm install prismarine-viewer canvas" 來安裝監看視窗的依賴。');
+                    this.config.enableViewer = false;
                 }
-
-                // --- [NEW] Anti-AFK Feature ---
-                if (this.config.antiAfk.enabled && !this.antiAfkInterval) {
-                    this.logger.info(`Anti-AFK 功能已啟用，將每隔 ${this.config.antiAfk.intervalMinutes} 分鐘執行一次動作。`);
-                    this.antiAfkInterval = setInterval(() => {
-                        if (this.state.status === 'ONLINE' && this.client) {
-                            this.logger.debug('[Anti-AFK] 執行揮手動作以保持連線。');
-                            this.client.swingArm('left');
-                        }
-                    }, this.config.antiAfk.intervalMinutes * 60 * 1000);
-                }
-
-                if (this.consecutiveConnectionFails > 0) {
-                    this.logger.info('連線成功，重置連續失敗計數器。');
-                    this.consecutiveConnectionFails = 0;
-                }
-                if (this.config.enableViewer) {
-                    await this.startViewer((global as any).viewerModule, (global as any).canvasModule);
-                }
-
-                // --- [REVISED] Start/Resume work logic ---
-                if (this.config.startWorkOnLogin && !this.isWorking) {
-                    // Case 1: First time login, config says start, and it's not already running.
-                    this.logger.info('根據設定，自動啟動工作模式...');
-                    this.startWork();
-                } else if (this.isWorking && !this.workTimeout) {
-                    // Case 2: It was working before disconnect (isWorking is true), so we just need to resume the loop.
-                    // This now also covers the case where startWorkOnLogin is true but it's a reconnect.
-                    this.logger.info('偵測到斷線重連，正在恢復工作模式...');
-                    // We don't call startWork() to avoid the warning. We just restart the loop.
-                    this._maintainOmenEffect();
-                }
-
-            } else {
-                this.logger.debug('機器人已重生 (例如：因傳送或切換世界)。');
             }
         });
 
         this.client.on('entityEffect', (entity: any, effect: any) => {
-            if (entity === this.client.entity) {
-                const lastEffect = this.lastKnownEffects.get(effect.id);
+            const client = this.client;
+            if (!client) return;
+            if (entity === client.entity) {
+                const mcData = require('minecraft-data')(client.version);
+                const effectName = Object.keys(mcData.effectsByName).find(name =>
+                    mcData.effectsByName[name].id === effect.id
+                );
 
-                if (!lastEffect || lastEffect.amplifier !== effect.amplifier) {
-                    const mcData = require('minecraft-data')(this.client.version);
-                    const effectName = Object.keys(mcData.effectsByName).find(name =>
-                        mcData.effectsByName[name].id === effect.id
-                    );
-
-                    const action = !lastEffect ? "獲得" : "等級變為";
+                const previousEffect = this.lastKnownEffects.get(effect.id);
+                if (!previousEffect || previousEffect.amplifier !== effect.amplifier) {
+                    const action = !previousEffect ? "獲得" :
+                        effect.amplifier > previousEffect.amplifier ? "等級提升為" :
+                            effect.amplifier < previousEffect.amplifier ? "等級變為" : "等級變為";
                     const name = effectName || `未知效果 (ID: ${effect.id})`;
 
                     this.logger.info(`[狀態更新] ${action}效果: ${name} (等級: ${effect.amplifier + 1})`);
@@ -572,8 +573,10 @@ class BotJava {
         });
         
         this.client.on('entityEffectEnd', (entity: any, effect: any) => {
-            if (entity === this.client.entity && this.lastKnownEffects.has(effect.id)) {
-                const mcData = require('minecraft-data')(this.client.version);
+            const client = this.client;
+            if (!client) return;
+            if (entity === client.entity && this.lastKnownEffects.has(effect.id)) {
+                const mcData = require('minecraft-data')(client.version);
                 const effectName = Object.keys(mcData.effectsByName).find(name =>
                     mcData.effectsByName[name].id === effect.id
                 );
@@ -593,7 +596,8 @@ class BotJava {
         });
 
         this.client.on('itemDrop', (entity: any) => {
-            if (!this.config.enableItemDropDetection) return;
+            const client = this.client;
+            if (!client || !this.config.enableItemDropDetection) return;
             if (!entity || !entity.metadata) return;
 
             // ++ 修改 ++ 檢查此掉落物實體是否已被處理
@@ -612,11 +616,11 @@ class BotJava {
                 let slotPosition: number;
 
                 // ++ 修改 ++ 根據日誌和版本特性，更精準地判斷 slot 位置
-                if (this.client.supportFeature('itemsAreAlsoBlocks')) { // < 1.13
+                if (client.supportFeature('itemsAreAlsoBlocks')) { // < 1.13
                     slotPosition = 6;
                 } else { // >= 1.13
-                    const majorVersion = parseInt(this.client.version.split('.')[1]);
-                    if (this.client.majorVersion === '1.13') {
+                    const majorVersion = parseInt(client.version.split('.')[1]);
+                    if (client.majorVersion === '1.13') {
                         slotPosition = 6;
                     } else if (majorVersion >= 20) { // 適用於 1.20, 1.21+
                         slotPosition = 9;
@@ -649,7 +653,7 @@ class BotJava {
 
                 if (itemId === undefined) return;
 
-                const item = this.client.registry.items[itemId];
+                const item = client.registry.items[itemId];
                 if (!item) {
                     this.logger.warn(`[掉落物] 根據 ID ${itemId} 找不到對應的物品信息。`);
                     return;
@@ -693,6 +697,7 @@ class BotJava {
         });
 
         this.client.on('message', (jsonMsg: any, position: any) => {
+            if (!this.client) return;
             try {
                 const messageText = jsonMsg.toString();
 
