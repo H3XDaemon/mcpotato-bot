@@ -15,12 +15,15 @@ interface CustomBotOptions extends BotOptions {
     viewerPort?: number;
     startWorkOnLogin?: boolean;
     enableItemDropDetection?: boolean;
-    antiAfk?: {
-        enabled: boolean;
-        intervalMinutes: number;
-    };
-}
-
+            antiAfk?: {
+                enabled: boolean;
+                intervalMinutes: number;
+            };
+            reconnectOnDuplicateLogin?: {
+                enabled: boolean;
+                delayMinutes: number;
+            };
+        }
 // =================================================================================
 // 1. UTILITIES (工具函式庫)
 // =================================================================================
@@ -240,12 +243,19 @@ class BotJava {
             antiAfk: {
                 enabled: false,
                 intervalMinutes: 4
+            },
+            reconnectOnDuplicateLogin: {
+                enabled: false,
+                delayMinutes: 60
             }
         };
         this.config = { ...defaultConfig, ...botConfig };
         // Deep merge for nested antiAfk object to ensure defaults are kept
         if (botConfig && botConfig.antiAfk) {
             this.config.antiAfk = { ...defaultConfig.antiAfk, ...botConfig.antiAfk };
+        }
+        if (botConfig && botConfig.reconnectOnDuplicateLogin) {
+            this.config.reconnectOnDuplicateLogin = { ...defaultConfig.reconnectOnDuplicateLogin, ...botConfig.reconnectOnDuplicateLogin };
         }
 
         this.client = null;
@@ -864,8 +874,22 @@ class BotJava {
         this.processedDropEntities.clear();
 
         if (isLoginElsewhere) {
-            this.logger.error('帳號從其他裝置登入，將停止自動重連。');
-            this.state.status = 'STOPPED';
+            if (this.config.reconnectOnDuplicateLogin && this.config.reconnectOnDuplicateLogin.enabled) {
+                const delayMinutes = this.config.reconnectOnDuplicateLogin.delayMinutes;
+                this.logger.warn(`帳號從其他裝置登入，已啟用定時重連功能，將在 ${delayMinutes} 分鐘後嘗試重連一次。`);
+                this.state.status = 'STOPPED';
+                if (this.reconnectTimeout) {
+                    clearTimeout(this.reconnectTimeout);
+                    this.reconnectTimeout = null;
+                }
+                this.reconnectTimeout = setTimeout(() => {
+                    this.logger.info(`已達到 ${delayMinutes} 分鐘，正在執行排定的單次重連...`);
+                    this.connect();
+                }, delayMinutes * 60 * 1000);
+            } else {
+                this.logger.error('帳號從其他裝置登入，將停止自動重連。');
+                this.state.status = 'STOPPED';
+            }
             return;
         }
 
