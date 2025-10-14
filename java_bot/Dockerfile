@@ -31,6 +31,9 @@ WORKDIR /usr/src/app
 COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/node_modules ./node_modules
 
+# 建立 config 和 profiles 目錄並設定權限
+RUN mkdir -p ./config ./profiles && chown -R 1001:0 ./config ./profiles
+
 # 建立一個非 root 使用者來運行應用程式，提升安全性。
 RUN useradd --system --uid 1001 --gid 0 node_user
 USER node_user

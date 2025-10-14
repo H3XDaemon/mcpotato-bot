@@ -1,6 +1,5 @@
 node_modules
 dist
-tsconfig.json
 .log
 npm-debug.log
 bun-debug.log*

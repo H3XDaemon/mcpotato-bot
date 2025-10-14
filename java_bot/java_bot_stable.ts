@@ -24,8 +24,8 @@ async function main() {
         console.error('=============================================================');
     });
 
-    if (!fs.existsSync(path.join(__dirname, 'config'))) fs.mkdirSync(path.join(__dirname, 'config'));
-    if (!fs.existsSync(path.join(__dirname, 'profiles'))) fs.mkdirSync(path.join(__dirname, 'profiles'));
+    if (!fs.existsSync(path.join(__dirname, '..', 'config'))) fs.mkdirSync(path.join(__dirname, '..', 'config'));
+    if (!fs.existsSync(path.join(__dirname, '..', 'profiles'))) fs.mkdirSync(path.join(__dirname, '..', 'profiles'));
 
     let configFileName: string;
 
@@ -35,7 +35,7 @@ async function main() {
         configFileName = 'accounts_java_stable.json';
     }
 
-    const accountsPath = path.join(__dirname, 'config', configFileName);
+    const accountsPath = path.join(__dirname, '..', 'config', configFileName);
     logger.info(`正在讀取設定檔: ${configFileName}`);
 
     if (!fs.existsSync(accountsPath)) {

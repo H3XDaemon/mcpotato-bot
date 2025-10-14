@@ -159,11 +159,11 @@ class TPSMonitor {
     // --- Game Time Logic ---
     calculateGameTimeTPS() {
         // Safety check in case this is called before `start`
-        if (!this.bot.time || typeof this.bot.time.bigTime === 'undefined') return;
+        if (!this.bot.time || !this.bot.time.bigTime || this.lastGameTime === null) return;
 
         const currentGameTime = this.bot.time.bigTime;
         const currentRealTime = Date.now();
-        const gameTimeDiff = Number(currentGameTime - this.lastGameTime);
+        const gameTimeDiff = Number(BigInt(currentGameTime) - BigInt(this.lastGameTime));
         const realTimeDiff = currentRealTime - this.lastRealTime;
 
         if (realTimeDiff > 0) {
@@ -304,7 +304,7 @@ class BotJava {
                 username: this.config.username,
                 version: this.config.version,
                 auth: 'microsoft',
-                profilesFolder: path.join(__dirname, 'profiles'),
+                profilesFolder: path.join(__dirname, '..', 'profiles'),
                 hideErrors: true,
                 onMsaCode: (data: any) => {
                     this.logger.info(`-------------------------------------------------`);
