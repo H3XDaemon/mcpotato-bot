@@ -1,8 +1,25 @@
 import * as path from 'path';
 import * as readline from 'readline';
 import * as util from 'util';
-import mineflayer from 'mineflayer';
+import { ChatMessage } from 'prismarine-chat';
+import mineflayer, { BotOptions } from 'mineflayer';
 import tpsPlugin from 'mineflayer-tps';
+
+interface CustomBotOptions extends BotOptions {
+    botTag: string;
+    host: string;
+    port: number;
+    username: string;
+    enabled?: boolean;
+    enableViewer?: boolean;
+    viewerPort?: number;
+    startWorkOnLogin?: boolean;
+    enableItemDropDetection?: boolean;
+    antiAfk?: {
+        enabled: boolean;
+        intervalMinutes: number;
+    };
+}
 
 // =================================================================================
 // 1. UTILITIES (工具函式庫)
@@ -210,7 +227,7 @@ class BotJava {
     processedDropEntities: Set<number>;
     logger: any;
 
-    constructor(botConfig: any) {
+    constructor(botConfig: CustomBotOptions) {
         const defaultConfig = {
             version: '1.21',
             auth: 'microsoft',
@@ -370,10 +387,11 @@ class BotJava {
         this.logger.info(`⏹️ 工作模式已停止。原因: ${reason}`);
     }
 
-    _debugAvailableEffects() {
+    async _debugAvailableEffects() {
         if (!this.client) return;
         try {
-            const mcData = require('minecraft-data')(this.client.version);
+            const mcDataFactory = (await import('minecraft-data')).default;
+            const mcData = mcDataFactory(this.client.version);
             this.logger.info(`--- [DEBUG] Minecraft ${this.client.version} 支援的效果列表 ---`);
             Object.keys(mcData.effectsByName).sort().forEach(name => {
                 const effect = mcData.effectsByName[name];
@@ -385,13 +403,14 @@ class BotJava {
         }
     }
 
-    _hasOmenEffect() {
+    async _hasOmenEffect() {
         if (!this.client) return false;
         try {
-            const mcData = require('minecraft-data')(this.client.version);
+            const mcDataFactory = (await import('minecraft-data')).default;
+            const mcData = mcDataFactory(this.client.version);
 
             if (this.config.debugMode && !this.effectsLogged) {
-                this._debugAvailableEffects();
+                await this._debugAvailableEffects();
                 this.effectsLogged = true;
             }
             
@@ -428,7 +447,7 @@ class BotJava {
             if (this.state.status === 'ONLINE' && this.client) {
                 this.logger.debug('[工作循環] 正在檢查 Omen 狀態...');
 
-                if (!this._hasOmenEffect()) {
+                if (!await this._hasOmenEffect()) {
                     this.logger.info('未偵測到 Omen 效果，開始補充...');
                     
                     const ominousBottle = this.client.inventory.items().find((item: any) => item.name === 'ominous_bottle');
@@ -538,8 +557,8 @@ class BotJava {
             if (this.config.enableViewer) {
                 // Dynamically import viewer dependencies only when needed
                 try {
-                    const viewerModule = require('prismarine-viewer').mineflayer;
-                    const { Canvas } = require('canvas');
+                    const viewerModule = (await import('prismarine-viewer')).mineflayer;
+                    const { Canvas } = await import('canvas');
                     await this.startViewer(viewerModule, { Canvas });
                 } catch (e: any) {
                     this.logger.error(`無法加載監看視窗模組: ${e.message}`);
@@ -549,11 +568,12 @@ class BotJava {
             }
         });
 
-        this.client.on('entityEffect', (entity: any, effect: any) => {
+        this.client.on('entityEffect', async (entity: any, effect: any) => {
             const client = this.client;
             if (!client) return;
             if (entity === client.entity) {
-                const mcData = require('minecraft-data')(client.version);
+                const mcDataFactory = (await import('minecraft-data')).default;
+                const mcData = mcDataFactory(client.version);
                 const effectName = Object.keys(mcData.effectsByName).find(name =>
                     mcData.effectsByName[name].id === effect.id
                 );
@@ -572,11 +592,12 @@ class BotJava {
             }
         });
         
-        this.client.on('entityEffectEnd', (entity: any, effect: any) => {
+        this.client.on('entityEffectEnd', async (entity: any, effect: any) => {
             const client = this.client;
             if (!client) return;
             if (entity === client.entity && this.lastKnownEffects.has(effect.id)) {
-                const mcData = require('minecraft-data')(client.version);
+                const mcDataFactory = (await import('minecraft-data')).default;
+                const mcData = mcDataFactory(client.version);
                 const effectName = Object.keys(mcData.effectsByName).find(name =>
                     mcData.effectsByName[name].id === effect.id
                 );
@@ -696,13 +717,13 @@ class BotJava {
             }
         });
 
-        this.client.on('message', (jsonMsg: any, position: any) => {
+        this.client.on('message', (jsonMsg: ChatMessage, position: string) => {
             if (!this.client) return;
             try {
                 const messageText = jsonMsg.toString();
 
                 if (
-                    jsonMsg.color === 'red' &&
+                    (jsonMsg as any).color === 'red' &&
                     messageText.includes('You are already trying to connect to a server!') &&
                     !this.connectionGlitchHandled
                 ) {
@@ -732,7 +753,7 @@ class BotJava {
             }
         });
 
-        this.client.on('kicked', (reason: string, loggedIn: boolean) => this._onDisconnected('kicked', reason));
+        this.client.on('kicked', (reason: string, _loggedIn: boolean) => this._onDisconnected('kicked', reason));
         this.client.on('error', (err: Error) => this._onDisconnected('error', err));
         this.client.on('end', (reason: string) => this._onDisconnected('end', reason));
     }

@@ -16,7 +16,7 @@ async function main() {
         console.error(err);
         console.error('============================================================');
     });
-    process.on('unhandledRejection', (reason: any, promise: any) => {
+    process.on('unhandledRejection', (reason: any, _promise: any) => {
         logger.unsetRl();
         console.error('\n==================== UNHANDLED REJECTION ====================');
         console.error('捕獲到未處理的 Promise Rejection！');
@@ -53,8 +53,8 @@ async function main() {
     if (isAnyViewerEnabled) {
         logger.info('偵測到監看功能已啟用，正在載入相關模組...');
         try {
-            (global as any).viewerModule = require('prismarine-viewer').mineflayer;
-            (global as any).canvasModule = require('canvas');
+            (global as any).viewerModule = (await import('prismarine-viewer')).mineflayer;
+            (global as any).canvasModule = await import('canvas');
         } catch (e: any) {
             logger.error('無法載入監看模組！請確認您已執行 `bun install` 或 `npm install`。');
             logger.error(e.message);
