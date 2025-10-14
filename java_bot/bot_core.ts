@@ -221,6 +221,7 @@ class BotJava {
     quickDisconnectCount: number;
     consecutiveConnectionFails: number;
     isDisconnecting: boolean;
+    isGuiBusy: boolean;
     connectionGlitchHandled: boolean;
     tpsMonitor: TPSMonitor | null;
     ominousTrialKeyDrops: number;
@@ -268,6 +269,7 @@ class BotJava {
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
         this.isDisconnecting = false;
+        this.isGuiBusy = false;
         this.connectionGlitchHandled = false;
         this.tpsMonitor = null;
 
@@ -537,13 +539,50 @@ class BotJava {
 
             if (this.config.antiAfk.enabled) {
                 if (this.antiAfkInterval) clearInterval(this.antiAfkInterval);
-                this.antiAfkInterval = setInterval(() => {
-                    if (this.client) {
-                        this.client.swingArm('left');
-                        this.logger.info('[Anti-AFK] 執行了一次揮手操作。');
+                this.antiAfkInterval = setInterval(async () => {
+                    if (!this.client || this.isGuiBusy) {
+                        if (this.isGuiBusy) this.logger.info('[Anti-AFK] 偵測到介面正在使用中，跳過本次操作。');
+                        return;
+                    }
+            
+                    this.isGuiBusy = true;
+                    this.logger.info('[Anti-AFK] 執行開啟並關閉 /ah 來重置計時器...');
+                    try {
+                        this.client.chat('/ah');
+                        const window: any = await new Promise((resolve, reject) => {
+                            const timer = setTimeout(() => {
+                                if (this.client) this.client.removeListener('windowOpen', onWindowOpen);
+                                reject(new Error('等待 /ah 視窗開啟超時 (10秒)'));
+                            }, 10000);
+                    
+                            const onWindowOpen = (win: any) => {
+                                clearTimeout(timer);
+                                if (this.client) this.client.removeListener('windowOpen', onWindowOpen);
+                                resolve(win);
+                            };
+                    
+                            if (this.client) {
+                                this.client.on('windowOpen', onWindowOpen);
+                            } else {
+                                clearTimeout(timer);
+                                reject(new Error('客戶端在等待視窗時斷線'));
+                            }
+                        });
+
+                        await sleep(1000); // Wait a second before closing
+                        window.close();
+                        this.logger.info('[Anti-AFK] /ah 介面已成功關閉。');
+                    } catch (err: any) {
+                        this.logger.error(`[Anti-AFK] 操作失敗: ${err.message}`);
+                        // If an error occurs, it's possible a window is stuck open.
+                        if (this.client.currentWindow) {
+                            try { this.client.closeWindow(this.client.currentWindow); } catch {}
+                        }
+                    } finally {
+                        this.isGuiBusy = false;
                     }
                 }, this.config.antiAfk.intervalMinutes * 60 * 1000);
-                this.logger.info(`Anti-AFK 功能已啟用，每 ${this.config.antiAfk.intervalMinutes} 分鐘會自動揮手。`);
+                this.logger.info(`Anti-AFK 功能已更新為執行 /ah 指令，每 ${this.config.antiAfk.intervalMinutes} 分鐘執行一次。`);
             }
         });
 

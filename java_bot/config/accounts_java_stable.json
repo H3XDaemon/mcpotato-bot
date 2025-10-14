@@ -17,6 +17,10 @@
     "version": "1.21.8",
     "username": "void",
     "enableViewer": false,
-    "startWorkOnLogin": true
+    "startWorkOnLogin": true,
+    "antiAfk": {
+      "enabled": true,
+      "intervalMinutes": 4
+    }
   }
 ]

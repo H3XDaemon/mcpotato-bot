@@ -34,12 +34,18 @@ function nbtToJson(nbt: any): any {
 }
 
 async function openWindow(botInstance: any, command: string, windowName: string): Promise<any> {
+    if (botInstance.isGuiBusy) {
+        botInstance.logger.warn(`無法開啟 ${windowName}，因為另一個介面操作正在進行中。`);
+        return null;
+    }
+
     const bot = botInstance.client;
     if (!bot) {
         botInstance.logger.warn('機器人未連線，無法開啟視窗。');
         return null;
     }
 
+    botInstance.isGuiBusy = true;
     let onWindowOpen: (window: any) => void;
     try {
         botInstance.logger.info(`正在發送 ${command} 指令並等待 ${windowName} 介面...`);
@@ -77,6 +83,8 @@ async function openWindow(botInstance: any, command: string, windowName: string)
     } catch (error: any) {
         botInstance.logger.error(`開啟 ${windowName} 視窗時發生錯誤: ${error.message}`);
         return null;
+    } finally {
+        botInstance.isGuiBusy = false;
     }
 }
 
