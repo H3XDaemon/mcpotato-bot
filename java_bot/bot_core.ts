@@ -1,9 +1,9 @@
 
-const path = require('path');
-const readline = require('readline');
-const util = require('util');
-const mineflayer = require('mineflayer');
-const tpsPlugin = require('mineflayer-tps')(mineflayer);
+import * as path from 'path';
+import * as readline from 'readline';
+import * as util from 'util';
+import mineflayer from 'mineflayer';
+import tpsPlugin from 'mineflayer-tps';
 
 // =================================================================================
 // 1. UTILITIES (工具函式庫)
@@ -14,16 +14,16 @@ const Colors = {
 };
 
 const logger = (() => {
-    let rlInterface = null;
-    let activeBotForLogging = null;
-    const LogLevel = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, CHAT: 4 };
+    let rlInterface: readline.Interface | null = null;
+    let activeBotForLogging: any = null;
+    const LogLevel: { [key: string]: number } = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, CHAT: 4 };
 
-    const log = (level, ...args) => {
+    const log = (level: number, ...args: any[]) => {
         if (level === LogLevel.DEBUG && !process.env.DEBUG) return;
         const isChat = level === LogLevel.CHAT;
 
-        const levelMap = { 0: 'DEBUG', 1: 'INFO', 2: 'WARN', 3: 'ERROR' };
-        const levelColorMap = { 0: Colors.FgMagenta, 1: Colors.FgGreen, 2: Colors.FgYellow, 3: Colors.FgRed, 4: Colors.Reset };
+        const levelMap: { [key: number]: string } = { 0: 'DEBUG', 1: 'INFO', 2: 'WARN', 3: 'ERROR' };
+        const levelColorMap: { [key: number]: string } = { 0: Colors.FgMagenta, 1: Colors.FgGreen, 2: Colors.FgYellow, 3: Colors.FgRed, 4: Colors.Reset };
 
         const timestamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).substring(0, 19);
         const botPrefix = activeBotForLogging ? `[${Colors.FgCyan}${activeBotForLogging.config.botTag}${Colors.Reset}] ` : '';
@@ -46,22 +46,33 @@ const logger = (() => {
         }
     };
     return {
-        setRl: (rl) => { rlInterface = rl; },
+        setRl: (rl: readline.Interface) => { rlInterface = rl; },
         unsetRl: () => { rlInterface = null; },
-        setActiveBot: (bot) => { activeBotForLogging = bot; },
-        debug: (...args) => log(LogLevel.DEBUG, ...args),
-        info: (...args) => log(LogLevel.INFO, ...args),
-        warn: (...args) => log(LogLevel.WARN, ...args),
-        error: (...args) => log(LogLevel.ERROR, ...args),
-        chat: (...args) => log(LogLevel.CHAT, ...args),
+        setActiveBot: (bot: any) => { activeBotForLogging = bot; },
+        debug: (...args: any[]) => log(LogLevel.DEBUG, ...args),
+        info: (...args: any[]) => log(LogLevel.INFO, ...args),
+        warn: (...args: any[]) => log(LogLevel.WARN, ...args),
+        error: (...args: any[]) => log(LogLevel.ERROR, ...args),
+        chat: (...args: any[]) => log(LogLevel.CHAT, ...args),
         Colors: Colors
     };
 })();
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 class TPSMonitor {
-    constructor(bot) {
+    bot: any;
+    packetTpsValues: number[];
+    lastPacketTime: number;
+    tickTimes: number[];
+    lastTickTime: number;
+    physicsTPS: number;
+    tpsHistory: number[];
+    lastGameTime: bigint;
+    lastRealTime: number;
+    gameTimeInterval: NodeJS.Timeout | null;
+
+    constructor(bot: mineflayer.Bot) {
         this.bot = bot;
 
         // --- 1. Network Packet Method ---
@@ -79,9 +90,9 @@ class TPSMonitor {
 
         // --- 3. Game Time Method ---
         this.tpsHistory = [];
-        this.lastGameTime = 0n; // Use a safe default value
+        this.lastGameTime = 0n;
         this.lastRealTime = Date.now();
-        this.gameTimeInterval = null; // Will be started later
+        this.gameTimeInterval = null;
     }
 
     start() {
@@ -110,7 +121,7 @@ class TPSMonitor {
     }
     getPacketTPS() {
         if (this.packetTpsValues.length === 0) return 20.0;
-        return this.packetTpsValues.reduce((a, b) => a + b) / this.packetTpsValues.length;
+        return this.packetTpsValues.reduce((a: number, b: number) => a + b) / this.packetTpsValues.length;
     }
 
     // --- Physics Tick Logic ---
@@ -120,7 +131,7 @@ class TPSMonitor {
         this.tickTimes.push(deltaTime);
         if (this.tickTimes.length > 100) this.tickTimes.shift();
         if (this.tickTimes.length >= 20) {
-            const avgDeltaTime = this.tickTimes.reduce((a, b) => a + b) / this.tickTimes.length;
+            const avgDeltaTime = this.tickTimes.reduce((a: number, b: number) => a + b) / this.tickTimes.length;
             this.physicsTPS = Math.min(20, 1000 / avgDeltaTime);
         }
         this.lastTickTime = now;
@@ -149,7 +160,7 @@ class TPSMonitor {
     }
     getGameTimeTPS() {
         if (this.tpsHistory.length === 0) return 20.0;
-        return this.tpsHistory.reduce((a, b) => a + b) / this.tpsHistory.length;
+        return this.tpsHistory.reduce((a: number, b: number) => a + b) / this.tpsHistory.length;
     }
 
     // --- Plugin Method (Wrapper) ---
@@ -179,7 +190,28 @@ const OMEN_CHECK_INTERVAL = 15000; // 備用檢查間隔 (15秒)
 const OMEN_REAPPLY_DELAY = 1500; // 效果結束後重新使用的延遲 (1.5秒)
 
 class BotJava {
-    constructor(botConfig) {
+    config: any;
+    client: any;
+    state: { status: string; };
+    reconnectTimeout: NodeJS.Timeout | null;
+    viewer: { port: number | null; instance: any | null; };
+    isWorking: boolean;
+    workTimeout: NodeJS.Timeout | null;
+    antiAfkInterval: NodeJS.Timeout | null;
+    effectsLogged: boolean;
+    lastKnownEffects: Map<number, any>;
+    reconnectAttempts: number[];
+    lastSuccessfulLoginTime: number | null;
+    quickDisconnectCount: number;
+    consecutiveConnectionFails: number;
+    isDisconnecting: boolean;
+    connectionGlitchHandled: boolean;
+    tpsMonitor: TPSMonitor | null;
+    ominousTrialKeyDrops: number;
+    processedDropEntities: Set<number>;
+    logger: any;
+
+    constructor(botConfig: any) {
         const defaultConfig = {
             version: '1.21',
             auth: 'microsoft',
@@ -230,9 +262,9 @@ class BotJava {
         this.logger = Object.fromEntries(
             Object.keys(logger).map(levelName => [
                 levelName,
-                (...args) => {
+                (...args: any[]) => {
                     logger.setActiveBot(this);
-                    logger[levelName](...args);
+                    (logger as any)[levelName](...args);
                     logger.setActiveBot(null);
                 }
             ]).filter(entry => typeof entry[1] === 'function')
@@ -258,7 +290,7 @@ class BotJava {
                 auth: 'microsoft',
                 profilesFolder: path.join(__dirname, 'profiles'),
                 hideErrors: true,
-                onMsaCode: (data) => {
+                onMsaCode: (data: any) => {
                     this.logger.info(`-------------------------------------------------`);
                     this.logger.warn(`[帳號認證] ${this.config.botTag} 需要手動認證！`);
                     this.logger.info(`請在瀏覽器中開啟此網址: ${data.verification_uri}`);
@@ -269,7 +301,7 @@ class BotJava {
             this.client.loadPlugin(tpsPlugin);
             this.tpsMonitor = new TPSMonitor(this.client);
             this._setupEventListeners();
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`建立機器人時發生初始錯誤: ${error.message}`);
             this._onDisconnected('initialization_error', error);
         }
@@ -288,7 +320,7 @@ class BotJava {
         this.client?.quit();
     }
 
-    async startViewer(viewerModule, canvasModule) {
+    async startViewer(viewerModule: any, canvasModule: any) {
         if (!this.config.enableViewer) return;
         if (this.viewer.instance) {
             this.logger.warn('監看視窗已經在運行中。');
@@ -309,7 +341,7 @@ class BotJava {
             }
             this.viewer.port = this.config.viewerPort;
             this.logger.info(`✅ 監看視窗已在 http://localhost:${this.viewer.port} 上運行`);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`啟動監看視窗時發生錯誤: ${error.message}`);
             this.logger.warn('此機器人的監看功能將被停用以避免後續錯誤。');
             this.config.enableViewer = false;
@@ -349,7 +381,7 @@ class BotJava {
                 this.logger.info(`  - ${name} (ID: ${effect.id})`);
             });
             this.logger.info(`--- [DEBUG] 效果列表結束 ---`);
-        } catch (e) {
+        } catch (e: any) {
             this.logger.error('無法獲取效果列表:', e.message);
         }
     }
@@ -381,7 +413,7 @@ class BotJava {
                 return hasEffect;
             });
 
-        } catch (e) {
+        } catch (e: any) {
             this.logger.error('檢查 Omen 效果時發生錯誤:', e.message);
             return false;
         }
@@ -399,7 +431,7 @@ class BotJava {
                 if (!this._hasOmenEffect()) {
                     this.logger.info('未偵測到 Omen 效果，開始補充...');
                     
-                    const ominousBottle = this.client.inventory.items().find(item => item.name === 'ominous_bottle');
+                    const ominousBottle = this.client.inventory.items().find((item: any) => item.name === 'ominous_bottle');
 
                     if (!ominousBottle) {
                         this.logger.warn('庫存中找不到 Ominous Bottle，將在下次檢查時重試。');
@@ -415,7 +447,7 @@ class BotJava {
                                 .map(name => mcData.effectsByName[name]?.id)
                                 .filter(Boolean);
 
-                            const onEffect = (entity, effect) => {
+                            const onEffect = (entity: any, effect: any) => {
                                 if (entity === this.client.entity && targetEffectIds.includes(effect.id)) {
                                     clearTimeout(timeout); // 清除超時計時器
                                     this.client.removeListener('entityEffect', onEffect);
@@ -450,7 +482,7 @@ class BotJava {
             } else {
                 this.logger.debug('[工作循環] 機器人非線上狀態，跳過本次操作檢查。');
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`在工作循環中發生錯誤: ${error.message}`);
         } finally {
             if (this.isWorking) {
@@ -498,7 +530,7 @@ class BotJava {
                     this.consecutiveConnectionFails = 0;
                 }
                 if (this.config.enableViewer) {
-                    await this.startViewer(global.viewerModule, global.canvasModule);
+                    await this.startViewer((global as any).viewerModule, (global as any).canvasModule);
                 }
 
                 // --- [REVISED] Start/Resume work logic ---
@@ -519,7 +551,7 @@ class BotJava {
             }
         });
 
-        this.client.on('entityEffect', (entity, effect) => {
+        this.client.on('entityEffect', (entity: any, effect: any) => {
             if (entity === this.client.entity) {
                 const lastEffect = this.lastKnownEffects.get(effect.id);
 
@@ -539,7 +571,7 @@ class BotJava {
             }
         });
         
-        this.client.on('entityEffectEnd', (entity, effect) => {
+        this.client.on('entityEffectEnd', (entity: any, effect: any) => {
             if (entity === this.client.entity && this.lastKnownEffects.has(effect.id)) {
                 const mcData = require('minecraft-data')(this.client.version);
                 const effectName = Object.keys(mcData.effectsByName).find(name =>
@@ -550,7 +582,7 @@ class BotJava {
 
                 this.lastKnownEffects.delete(effect.id);
                 
-                if (this.isWorking && ['TrialOmen', 'BadOmen'].includes(effectName)) {
+                if (this.isWorking && ['TrialOmen', 'BadOmen'].includes(effectName as string)) {
                     this.logger.info('偵測到 Omen 效果結束，立即安排一次快速檢查...');
                     
                     if (this.workTimeout) clearTimeout(this.workTimeout);
@@ -560,7 +592,7 @@ class BotJava {
             }
         });
 
-        this.client.on('itemDrop', (entity) => {
+        this.client.on('itemDrop', (entity: any) => {
             if (!this.config.enableItemDropDetection) return;
             if (!entity || !entity.metadata) return;
 
@@ -576,8 +608,8 @@ class BotJava {
             }
 
             try {
-                let itemData;
-                let slotPosition;
+                let itemData: any;
+                let slotPosition: number;
 
                 // ++ 修改 ++ 根據日誌和版本特性，更精準地判斷 slot 位置
                 if (this.client.supportFeature('itemsAreAlsoBlocks')) { // < 1.13
@@ -598,7 +630,7 @@ class BotJava {
                 if (!itemData) {
                     this.logger.warn(`[掉落物] 在預期的 metadata[${slotPosition}] 中找不到物品數據，將嘗試遍歷搜尋...`);
                     for (const [key, value] of Object.entries(entity.metadata)) {
-                        if (value && (value.itemId !== undefined || value.blockId !== undefined)) {
+                        if (value && ((value as any).itemId !== undefined || (value as any).blockId !== undefined)) {
                             this.logger.info(`[掉落物] 在 metadata[${key}] 找到備用物品數據！`);
                             itemData = value;
                             break; 
@@ -639,13 +671,13 @@ class BotJava {
                     this.logger.info(`[戰利品] ominous_trial_key 掉落了 ${itemCount} 個，目前總計: ${this.ominousTrialKeyDrops}`);
                 }
 
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.error(`處理掉落物時發生錯誤: ${error.message}`);
                 this.logger.debug(error.stack);
             }
         });
 
-        this.client.on('entityGone', (entity) => {
+        this.client.on('entityGone', (entity: any) => {
             // ++ 新增 ++ 當掉落物實體消失時，從集合中移除，釋放記憶體
             if (this.processedDropEntities.has(entity.id)) {
                 this.processedDropEntities.delete(entity.id);
@@ -653,14 +685,14 @@ class BotJava {
             }
         });
 
-        this.client.on('entitySpawn', (entity) => {
+        this.client.on('entitySpawn', (entity: any) => {
             if (this.config.debugMode && entity.name && (entity.name.toLowerCase() === 'item' || entity.name.toLowerCase() === 'item_stack')) {
                 this.logger.info(`🔍 偵測到掉落物實體生成 (名稱: ${entity.name}, ID: ${entity.id})`);
                 this.logger.debug(`[掉落物偵錯-SPAWN] 實體位於 ${entity.position.floored()}`);
             }
         });
 
-        this.client.on('message', (jsonMsg, position) => {
+        this.client.on('message', (jsonMsg: any, position: any) => {
             try {
                 const messageText = jsonMsg.toString();
 
@@ -684,23 +716,23 @@ class BotJava {
                 if (cleanMessageText.includes('達到在線賺錢上限')) {
                     this.logger.info('偵測到「達到在線賺錢上限」訊息，將自動提款...');
                     setTimeout(() => {
-                        takeItemFromWindow(this, '/atm', '虛擬銀行 (ATM)', 9);
+                        (global as any).takeItemFromWindow(this, '/atm', '虛擬銀行 (ATM)', 9);
                     }, 1500);
                 }
 
                 this.logger.chat(jsonMsg.toAnsi());
-            } catch (error) {
+            } catch (error: any) {
                 this.logger.warn('攔截到一個可忽略的聊天封包解析錯誤，已忽略以維持連線穩定。');
                 this.logger.debug(`錯誤詳情: ${error.message}`);
             }
         });
 
-        this.client.on('kicked', (reason, loggedIn) => this._onDisconnected('kicked', reason));
-        this.client.on('error', (err) => this._onDisconnected('error', err));
-        this.client.on('end', (reason) => this._onDisconnected('end', reason));
+        this.client.on('kicked', (reason: string, loggedIn: boolean) => this._onDisconnected('kicked', reason));
+        this.client.on('error', (err: Error) => this._onDisconnected('error', err));
+        this.client.on('end', (reason: string) => this._onDisconnected('end', reason));
     }
 
-    _onDisconnected(source, reason) {
+    _onDisconnected(source: string, reason: string | Error) {
         if (this.isDisconnecting || this.state.status === 'STOPPED') return;
         this.isDisconnecting = true;
 
@@ -727,17 +759,17 @@ class BotJava {
         if (reason) {
             if (reason instanceof Error) {
                 reasonText = reason.message;
-                if (reason.code === 'ECONNRESET') {
+                if ((reason as any).code === 'ECONNRESET') {
                     isNetworkError = true;
-                    reasonText = `網路連線被重設 (${reason.code})`;
+                    reasonText = `網路連線被重設 (${(reason as any).code})`;
                 } else if (reasonText.includes('timed out')) {
                     isNetworkError = true;
                     reasonText = `客戶端超時 (Keep-Alive 未收到回應)`;
                 }
             } else if (typeof reason === 'string') {
                 reasonText = reason;
-            } else if (typeof reason.toAnsi === 'function') {
-                reasonText = reason.toAnsi().replace(/\u001b\[[0-9;]*m/g, '');
+            } else if (typeof (reason as any).toAnsi === 'function') {
+                reasonText = (reason as any).toAnsi().replace(/\u001b\[[0-9;]*m/g, '');
             } else {
                 try { reasonText = JSON.stringify(reason); }
                 catch (e) { reasonText = util.inspect(reason); }
@@ -814,7 +846,7 @@ class BotJava {
         }
     }
 
-    _scheduleReconnect(context = {}) {
+    _scheduleReconnect(context: { isNetworkError?: boolean } = {}) {
         if (this.reconnectTimeout || !this.config.enabled) return;
 
         const { isNetworkError = false } = context;
@@ -870,7 +902,7 @@ class BotJava {
         }, delay);
     }
 
-    runCommand(command) {
+    runCommand(command: string) {
         if (this.state.status !== 'ONLINE' || !this.client) {
             this.logger.warn('離線或未完全連接狀態，無法執行指令');
             return;
@@ -880,10 +912,4 @@ class BotJava {
     }
 }
 
-module.exports = {
-    BotJava,
-    TPSMonitor,
-    logger,
-    sleep,
-    Colors
-};
+export { BotJava, TPSMonitor, logger, sleep, Colors };

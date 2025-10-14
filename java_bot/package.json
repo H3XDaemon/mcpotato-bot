@@ -4,8 +4,9 @@
   "description": "一個以安全性與穩定性為優先的單檔案 Minecraft Java 版機器人，並整合了網頁監看功能。",
   "main": "java_bot_secure.js",
   "scripts": {
-    "start": "node java_bot_stable.js",
-    "dev": "cross-env NODE_ENV=test node java_bot_test.js"
+    "build": "tsc",
+    "start": "npm run build && node dist/java_bot_stable.js",
+    "dev": "npm run build && cross-env NODE_ENV=test node dist/java_bot_test.js"
   },
   "keywords": [
     "minecraft",
@@ -20,5 +21,9 @@
     "cross-env": "^10.1.0",
     "mineflayer": "^4.0.0",
     "mineflayer-tps": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.3"
   }
 }

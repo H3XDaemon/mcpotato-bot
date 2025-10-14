@@ -1,14 +1,14 @@
-const fs = require('fs');
-const path = require('path');
-const { BotJava, logger, sleep } = require('./bot_core.js');
-const { startConsole } = require('./console.js');
+import * as fs from 'fs';
+import * as path from 'path';
+import { BotJava, logger, sleep } from './bot_core.js';
+import { startConsole } from './console.js';
 
 // =================================================================================
 // 4. MAIN EXECUTION (主程式入口)
 // =================================================================================
 
 async function main() {
-    process.on('uncaughtException', (err, origin) => {
+    process.on('uncaughtException', (err: Error, origin: string) => {
         logger.unsetRl();
         console.error('\n==================== UNCAUGHT EXCEPTION ====================\n');
         console.error('捕獲到未處理的頂層異常！這是一個嚴重錯誤，可能導致程式不穩定。');
@@ -16,7 +16,7 @@ async function main() {
         console.error(err);
         console.error('============================================================');
     });
-    process.on('unhandledRejection', (reason, promise) => {
+    process.on('unhandledRejection', (reason: any, promise: any) => {
         logger.unsetRl();
         console.error('\n==================== UNHANDLED REJECTION ====================\n');
         console.error('捕獲到未處理的 Promise Rejection！');
@@ -27,7 +27,7 @@ async function main() {
     if (!fs.existsSync(path.join(__dirname, 'config'))) fs.mkdirSync(path.join(__dirname, 'config'));
     if (!fs.existsSync(path.join(__dirname, 'profiles'))) fs.mkdirSync(path.join(__dirname, 'profiles'));
 
-    let configFileName;
+    let configFileName: string;
 
     if (process.env.NODE_ENV === 'test') {
         configFileName = 'accounts_java_test.json';
@@ -45,21 +45,21 @@ async function main() {
     }
 
     const accounts = JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
-    const botManager = new Map();
-    const botTagsByIndex = [];
+    const botManager = new Map<string, BotJava>();
+    const botTagsByIndex: string[] = [];
 
-    const isAnyViewerEnabled = accounts.some(acc => acc.enabled && acc.enableViewer);
+    const isAnyViewerEnabled = accounts.some((acc: any) => acc.enabled && acc.enableViewer);
 
     if (isAnyViewerEnabled) {
         logger.info('偵測到監看功能已啟用，正在載入相關模組...');
         try {
-            global.viewerModule = require('prismarine-viewer').mineflayer;
-            global.canvasModule = require('canvas');
-        } catch (e) {
+            (global as any).viewerModule = require('prismarine-viewer').mineflayer;
+            (global as any).canvasModule = require('canvas');
+        } catch (e: any) {
             logger.error('無法載入監看模組！請確認您已執行 `bun install` 或 `npm install`。');
             logger.error(e.message);
             logger.warn('將在無監看模式下繼續運行...');
-            accounts.forEach(acc => acc.enableViewer = false);
+            accounts.forEach((acc: any) => acc.enableViewer = false);
         }
     }
 

@@ -1,13 +1,15 @@
 
-const readline = require('readline');
-const util = require('util');
-const ChatMessage = require('prismarine-chat');
-const { logger, sleep, Colors } = require('./bot_core.js');
+import { logger, sleep, Colors } from './bot_core.js';
+import * as readline from 'readline';
+import * as util from 'util';
+import ChatMessage from 'prismarine-chat';
+
+export { startConsole, nbtToJson, openWindow, getCustomName, listWindowItems, takeItemFromWindow, interactiveWindowGui, rideVehicle };
 
 // =================================================================================
 // 3. CONSOLE INTERFACE (主控台介面)
 // =================================================================================
-function nbtToJson(nbt) {
+function nbtToJson(nbt: any): any {
     if (typeof nbt !== 'object' || nbt === null) {
         return nbt;
     }
@@ -22,7 +24,7 @@ function nbtToJson(nbt) {
         }
     }
     if (!nbt.type) {
-        const newObj = {};
+        const newObj: { [key: string]: any } = {};
         for (const key in nbt) {
             newObj[key] = nbtToJson(nbt[key]);
         }
@@ -31,14 +33,14 @@ function nbtToJson(nbt) {
     return nbt;
 }
 
-async function openWindow(botInstance, command, windowName) {
+async function openWindow(botInstance: any, command: string, windowName: string): Promise<any> {
     const bot = botInstance.client;
     if (!bot) {
         botInstance.logger.warn('機器人未連線，無法開啟視窗。');
         return null;
     }
 
-    let onWindowOpen;
+    let onWindowOpen: (window: any) => void;
     try {
         botInstance.logger.info(`正在發送 ${command} 指令並等待 ${windowName} 介面...`);
         const window = await new Promise((resolve, reject) => {
@@ -47,7 +49,7 @@ async function openWindow(botInstance, command, windowName) {
                 reject(new Error(`等待 ${windowName} 視窗開啟超時 (10秒)`));
             }, 10000);
 
-            onWindowOpen = (win) => {
+            onWindowOpen = (win: any) => {
                 if (win.id === 0) {
                     botInstance.logger.debug("已忽略玩家物品欄開啟事件。");
                     return;
@@ -64,7 +66,7 @@ async function openWindow(botInstance, command, windowName) {
         const pollingStart = Date.now();
         const POLLING_TIMEOUT = 10000;
         while (Date.now() - pollingStart < POLLING_TIMEOUT) {
-            if (window.containerItems().length > 0) {
+            if ((window as any).containerItems().length > 0) {
                 botInstance.logger.debug(`在 ${Date.now() - pollingStart}ms 後成功載入視窗物品。`);
                 return window;
             }
@@ -72,13 +74,13 @@ async function openWindow(botInstance, command, windowName) {
         }
         botInstance.logger.warn(`無法從 ${windowName} 載入任何物品。`);
         return window;
-    } catch (error) {
+    } catch (error: any) {
         botInstance.logger.error(`開啟 ${windowName} 視窗時發生錯誤: ${error.message}`);
         return null;
     }
 }
 
-function getCustomName(item, botInstance) {
+function getCustomName(item: any, botInstance: any): string | null {
     try {
         if (!item) return null;
 
@@ -86,10 +88,10 @@ function getCustomName(item, botInstance) {
             botInstance.logger.info(`[Component Debug] 正在檢測 ${item.name} 的 components: ${util.inspect(item.components, { depth: null })}`);
         }
 
-        let customNameData = null;
+        let customNameData: any = null;
 
         if (Array.isArray(item.components)) {
-            const customNameComponent = item.components.find(c => c.type === 'minecraft:custom_name' || c.type === 'custom_name');
+            const customNameComponent = item.components.find((c: any) => c.type === 'minecraft:custom_name' || c.type === 'custom_name');
             if (customNameComponent && customNameComponent.data) {
                 customNameData = nbtToJson(customNameComponent.data);
             }
@@ -107,14 +109,14 @@ function getCustomName(item, botInstance) {
         }
 
         return null;
-    } catch (e) {
+    } catch (e: any) {
         botInstance.logger.warn(`解析物品 ${item.name} 的自訂名稱時發生錯誤: ${e.message}`);
         return null;
     }
 }
 
-async function listWindowItems(botInstance, command, windowName) {
-    let window = null;
+async function listWindowItems(botInstance: any, command: string, windowName: string): Promise<void> {
+    let window: any = null;
     try {
         window = await openWindow(botInstance, command, windowName);
         if (!window) return;
@@ -122,12 +124,12 @@ async function listWindowItems(botInstance, command, windowName) {
         const items = window.containerItems();
         botInstance.logger.chat(`--- ${botInstance.config.botTag} 的 ${windowName} 物品列表 ---`);
 
-        const relevantItems = items.filter(item => item.name !== 'gray_stained_glass_pane');
+        const relevantItems = items.filter((item: any) => item.name !== 'gray_stained_glass_pane');
 
         if (relevantItems.length === 0) {
             botInstance.logger.chat('   -> 介面內沒有可操作的物品。');
         } else {
-            const outputLines = relevantItems.map(item => {
+            const outputLines = relevantItems.map((item: any) => {
                 const slot = `欄位: ${String(item.slot).padEnd(3)}`;
                 const displayName = item.displayName.padEnd(22);
                 const customName = getCustomName(item, botInstance);
@@ -142,7 +144,7 @@ async function listWindowItems(botInstance, command, windowName) {
         }
         botInstance.logger.chat(`------------------------------------`);
 
-    } catch (error) {
+    } catch (error: any) {
         botInstance.logger.error(`處理 ${windowName} 視窗時發生錯誤: ${error.message}`);
         botInstance.logger.debug(error.stack);
     } finally {
@@ -153,19 +155,19 @@ async function listWindowItems(botInstance, command, windowName) {
     }
 }
 
-async function takeItemFromWindow(botInstance, command, windowName, slot) {
-    let window = null;
+async function takeItemFromWindow(botInstance: any, command: string, windowName: string, slot: number): Promise<void> {
+    let window: any = null;
     try {
         window = await openWindow(botInstance, command, windowName);
         if (!window) return;
 
         const items = window.containerItems();
-        const item = items.find(i => i.slot === slot);
+        const item = items.find((i: any) => i.slot === slot);
 
         if (!item) {
             botInstance.logger.error(`欄位 ${slot} 中沒有物品。`);
             if (botInstance.config.debugMode) {
-                botInstance.logger.debug("可用的容器欄位:", items.map(i => i.slot));
+                botInstance.logger.debug("可用的容器欄位:", items.map((i: any) => i.slot));
             }
             return;
         }
@@ -174,7 +176,7 @@ async function takeItemFromWindow(botInstance, command, windowName, slot) {
         await botInstance.client.clickWindow(slot, 0, 0);
         botInstance.logger.info(`✅ 已成功點擊欄位 ${slot}。`);
 
-    } catch (error) {
+    } catch (error: any) {
         botInstance.logger.error(`從 ${windowName} 拿取物品時發生錯誤: ${error.message}`);
     } finally {
         if (window && botInstance.client && botInstance.client.currentWindow && botInstance.client.currentWindow.id === window.id) {
@@ -185,8 +187,8 @@ async function takeItemFromWindow(botInstance, command, windowName, slot) {
     }
 }
 
-async function interactiveWindowGui(botInstance, command, windowName, rl) {
-    let window = null;
+async function interactiveWindowGui(botInstance: any, command: string, windowName: string, rl: readline.Interface): Promise<void> {
+    let window: any = null;
     const bot = botInstance.client;
     if (!bot) {
         botInstance.logger.warn('機器人未連線，無法開啟 GUI。');
@@ -201,14 +203,13 @@ async function interactiveWindowGui(botInstance, command, windowName, rl) {
         rl.pause();
 
         const guiLoop = async () => {
-            console.log(`
-${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 ---${Colors.Reset}`);
-            const items = window.containerItems().filter(item => item.name !== 'gray_stained_glass_pane');
+            console.log(`\n${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 ---${Colors.Reset}`);
+            const items = window.containerItems().filter((item: any) => item.name !== 'gray_stained_glass_pane');
 
             if (items.length === 0) {
                 console.log('   -> 介面是空的。');
             } else {
-                items.forEach(item => {
+                items.forEach((item: any) => {
                     const customName = getCustomName(item, botInstance);
                     const name = customName ? `${item.displayName} | ${customName}` : item.displayName;
                     console.log(`  [${String(item.slot).padStart(2, ' ')}] ${name} (x${item.count})`);
@@ -216,7 +217,7 @@ ${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 
             }
             console.log(`--------------------------------------------------`);
 
-            const answer = await new Promise(resolve => {
+            const answer: string = await new Promise(resolve => {
                 rl.question(`輸入要點擊的欄位編號，或輸入 'exit'/'e' 離開: `, resolve);
             });
             const trimmedAnswer = answer.trim().toLowerCase();
@@ -233,12 +234,12 @@ ${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 
             }
 
             const allContainerItems = window.containerItems();
-            const itemToClick = allContainerItems.find(i => i.slot === slot);
+            const itemToClick = allContainerItems.find((i: any) => i.slot === slot);
 
             if (!itemToClick) {
                 console.log(`${Colors.FgYellow}欄位 ${slot} 是空的或無效。${Colors.Reset}`);
                 if (botInstance.config.debugMode) {
-                    console.log("Available slots:", allContainerItems.map(i => i.slot));
+                    console.log("Available slots:", allContainerItems.map((i: any) => i.slot));
                 }
             } else {
                 console.log(`${Colors.FgGreen}正在點擊欄位 ${slot} (${itemToClick.displayName})...${Colors.Reset}`);
@@ -251,7 +252,7 @@ ${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 
 
         await guiLoop();
 
-    } catch (error) {
+    } catch (error: any) {
         botInstance.logger.error(`互動式 GUI 發生錯誤: ${error.message}`);
     } finally {
         if (window && bot.currentWindow && bot.currentWindow.id === window.id) {
@@ -264,7 +265,7 @@ ${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 
     }
 }
 
-async function rideVehicle(botInstance, vehicleName, friendlyName) {
+async function rideVehicle(botInstance: any, vehicleName: string, friendlyName: string): Promise<void> {
     const bot = botInstance.client;
     if (!bot) {
         botInstance.logger.warn('機器人未連線，無法執行操作。');
@@ -272,7 +273,7 @@ async function rideVehicle(botInstance, vehicleName, friendlyName) {
     }
 
     // 尋找 10 格內最近的載具
-    const vehicle = bot.nearestEntity(entity =>
+    const vehicle = bot.nearestEntity((entity: any) =>
         entity.name && entity.name.toLowerCase().includes(vehicleName) && bot.entity.position.distanceTo(entity.position) < 10
     );
 
@@ -284,12 +285,12 @@ async function rideVehicle(botInstance, vehicleName, friendlyName) {
     try {
         await bot.mount(vehicle);
         botInstance.logger.info(`✅ 成功坐上${friendlyName}。`);
-    } catch (error) {
+    } catch (error: any) {
         botInstance.logger.error(`坐上${friendlyName}時發生錯誤: ${error.message}`);
     }
 }
 
-function startConsole(botManager, botTagsByIndex) {
+function startConsole(botManager: Map<string, any>, botTagsByIndex: string[]) {
     console.log(`
 ${Colors.FgCyan}======================================================${Colors.Reset}`);
     console.log(`${Colors.FgCyan}   Java 版帳號控制台已啟動                                       ${Colors.Reset}`);
@@ -298,7 +299,7 @@ ${Colors.FgCyan}======================================================${Colors.R
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     logger.setRl(rl);
-    let activeBot = botManager.size > 0 ? botManager.get(botTagsByIndex[0]) : null;
+    let activeBot: any = botManager.size > 0 ? botManager.get(botTagsByIndex[0]) : null;
     if (activeBot) console.log(`預設操作目標已設定為: ${Colors.FgCyan}${activeBot.config.botTag}${Colors.Reset}`);
 
     const setPrompt = () => {
@@ -312,9 +313,9 @@ ${Colors.FgCyan}======================================================${Colors.R
         rl.setPrompt(`${prefix}> `);
     };
 
-    const parseCommandTargets = (args) => {
-        const targets = [];
-        const cleanArgs = [];
+    const parseCommandTargets = (args: string[]) => {
+        const targets: any[] = [];
+        const cleanArgs: string[] = [];
         let customTargetFound = false;
 
         for (const arg of args) {
@@ -352,7 +353,7 @@ ${Colors.FgCyan}======================================================${Colors.R
         return { targets: uniqueTargets, cleanArgs };
     };
 
-    const commands = {
+    const commands: { [key: string]: (args: string[]) => void } = {
         'help': () => {
             console.log(`
 --- 指令列表 ---
@@ -386,9 +387,9 @@ ${Colors.FgCyan}======================================================${Colors.R
         'list': () => {
             console.log(`
 --- 機器人狀態列表 ---`);
-            botTagsByIndex.forEach((botTag, index) => {
+            botTagsByIndex.forEach((botTag: string, index: number) => {
                 const bot = botManager.get(botTag);
-                const statusColors = { 'ONLINE': Colors.FgGreen, 'CONNECTING': Colors.FgYellow, 'OFFLINE': Colors.FgRed, 'STOPPED': Colors.FgMagenta };
+                const statusColors: { [key: string]: string } = { 'ONLINE': Colors.FgGreen, 'CONNECTING': Colors.FgYellow, 'OFFLINE': Colors.FgRed, 'STOPPED': Colors.FgMagenta };
                 const color = statusColors[bot.state.status] || Colors.Reset;
                 const isActive = activeBot && bot.config.botTag === activeBot.config.botTag ? ` ${Colors.FgYellow}<-- 目前操作${Colors.Reset}` : '';
                 const indexStr = `[${index + 1}]`.padEnd(4);
@@ -397,7 +398,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 console.log(`${indexStr} - ${bot.config.botTag.padEnd(15)} | 狀態: ${color}${bot.state.status.padEnd(10)}${Colors.Reset} | 工作: ${workIndicator} | 監看: ${viewerStatus}${isActive}`);
             });
         },
-        'view': (args) => {
+        'view': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
             targets.forEach(bot => {
                 if (!bot.config.enableViewer) {
@@ -409,7 +410,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 }
             });
         },
-        'bot': ([target]) => {
+        'bot': ([target]: string[]) => {
             if (!target) return console.log(`
 目前選擇的機器人: ${activeBot ? activeBot.config.botTag : '無'}`);
             const identifier = target.startsWith('@') ? target.substring(1) : target;
@@ -429,34 +430,34 @@ ${Colors.FgCyan}======================================================${Colors.R
                 logger.error(`找不到機器人: ${target}`);
             }
         },
-        'connect': async (args) => {
+        'connect': async (args: string[]) => {
             const { targets } = parseCommandTargets(args);
             for (const bot of targets) {
                 await bot.connect();
             }
         },
-        'disconnect': (args) => {
+        'disconnect': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach(bot => bot.disconnect());
+            targets.forEach((bot: any) => bot.disconnect());
         },
         'exit': () => rl.close(),
-        'debug': (args) => {
+        'debug': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach(bot => {
+            targets.forEach((bot: any) => {
                 bot.config.debugMode = !bot.config.debugMode;
                 bot.logger.info(`除錯模式已${bot.config.debugMode ? '開啟' : '關閉'}。`);
             });
         },
-        'say': (args) => {
+        'say': (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             if (cleanArgs.length === 0) {
                 logger.error('請輸入要發送的訊息。用法: say <訊息>');
                 return;
             }
             const message = cleanArgs.join(' ');
-            targets.forEach(bot => bot.runCommand(message));
+            targets.forEach((bot: any) => bot.runCommand(message));
         },
-        'work': (args) => {
+        'work': (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             const subCommand = cleanArgs[0]?.toLowerCase();
 
@@ -465,7 +466,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 return;
             }
 
-            targets.forEach(bot => {
+            targets.forEach((bot: any) => {
                 if (subCommand === 'start') {
                     if (bot.state.status === 'ONLINE') {
                         bot.startWork();
@@ -477,7 +478,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 }
             });
         },
-        'mount': async (args) => {
+        'mount': async (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             const subCommand = cleanArgs[0]?.toLowerCase();
 
@@ -499,9 +500,9 @@ ${Colors.FgCyan}======================================================${Colors.R
                 }
             }
         },
-        'dismount': (args) => {
+        'dismount': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach(bot => {
+            targets.forEach((bot: any) => {
                 if (bot.state.status !== 'ONLINE' || !bot.client) {
                     bot.logger.warn('機器人未上線，無法下坐騎。');
                     return;
@@ -514,9 +515,9 @@ ${Colors.FgCyan}======================================================${Colors.R
                 }
             });
         },
-        'pos': (args) => {
+        'pos': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach(bot => {
+            targets.forEach((bot: any) => {
                 if (bot.state.status !== 'ONLINE' || !bot.client) {
                     bot.logger.warn('機器人未上線，無法取得座標。');
                     return;
@@ -526,7 +527,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 bot.logger.info(message);
             });
         },
-        'tps': async (args) => {
+        'tps': async (args: string[]) => {
             const { targets } = parseCommandTargets(args);
             for (const bot of targets) {
                 if (bot.state.status !== 'ONLINE' || !bot.client || !bot.tpsMonitor) {
@@ -539,16 +540,16 @@ ${Colors.FgCyan}======================================================${Colors.R
                     const physicsTps = bot.tpsMonitor.getPhysicsTPS();
                     const gameTimeTps = bot.tpsMonitor.getGameTimeTPS();
 
-                    const formatTps = (tps) => (tps < 0 ? '錯誤' : tps.toFixed(2).padStart(5));
+                    const formatTps = (tps: number) => (tps < 0 ? '錯誤' : tps.toFixed(2).padStart(5));
 
                     bot.logger.info(`伺服器 TPS - [插件]: ${formatTps(pluginTps)} | [封包]: ${formatTps(packetTps)} | [物理]: ${formatTps(physicsTps)} | [時間]: ${formatTps(gameTimeTps)}`);
 
-                } catch (error) {
+                } catch (error: any) {
                     bot.logger.error(`取得 TPS 時發生錯誤: ${error.message}`);
                 }
             }
         },
-        'test': async (args) => {
+        'test': async (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             const subCommand = cleanArgs[0]?.toLowerCase();
 
@@ -573,12 +574,12 @@ ${Colors.FgCyan}======================================================${Colors.R
                     } else {
                         bot.logger.warn('[測試] 背包是空的，無法執行掉落測試。');
                     }
-                } catch (error) {
+                } catch (error: any) {
                     bot.logger.error(`執行掉落測試時發生錯誤: ${error.message}`);
                 }
             }
         },
-        'atm': async (args) => {
+        'atm': async (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             const subCommand = cleanArgs[0];
 
@@ -619,7 +620,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 }
             }
         },
-        'inv': async (args) => {
+        'inv': async (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             const subCommand = cleanArgs[0];
 
@@ -647,7 +648,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                     if (items.length === 0) {
                         bot.logger.chat('   -> 背包是空的。');
                     } else {
-                        const outputLines = items.map(item => {
+                        const outputLines = items.map((item: any) => {
                             const itemName = item.displayName;
                             return `     - 欄位 ${String(item.slot).padEnd(3)} | ${itemName} (x${item.count})`;
                         });
@@ -656,7 +657,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                     const footer = `------------------------------------`;
                     bot.logger.chat(footer);
 
-                } catch (error) {
+                } catch (error: any) {
                     bot.logger.error(`執行 "inv list" 時發生錯誤: ${error.message}`);
                 }
             }
@@ -666,7 +667,7 @@ ${Colors.FgCyan}======================================================${Colors.R
     setPrompt();
     rl.prompt();
 
-    rl.on('line', async (line) => {
+    rl.on('line', async (line: string) => {
         const trimmedLine = line.trim();
         if (!trimmedLine) {
             rl.prompt();
@@ -677,18 +678,19 @@ ${Colors.FgCyan}======================================================${Colors.R
             const commandToRun = trimmedLine.substring(1);
             if (commandToRun.length > 1) {
                 logger.info(`[ALL] > ${commandToRun}`);
-                botManager.forEach(bot => {
+                botManager.forEach((bot: any) => {
                     if (bot.state.status === 'ONLINE') bot.runCommand(commandToRun);
                 });
             }
-        } else {
+        }
+        else {
             const [command, ...args] = trimmedLine.split(/\s+/);
             const handler = commands[command.toLowerCase()];
             if (handler) {
                 await handler(args);
             } else if (trimmedLine.startsWith('/')) {
                 const { targets } = parseCommandTargets(args);
-                targets.forEach(bot => bot.runCommand(trimmedLine));
+                targets.forEach((bot: any) => bot.runCommand(trimmedLine));
             }
             else {
                 logger.error(`未知指令: '${command}'。輸入 'help' 查看可用指令。`);
