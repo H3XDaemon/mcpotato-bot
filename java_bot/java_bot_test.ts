@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BotJava, logger, sleep } from './bot_core.js';
-import { startConsole } from './console.js';
+import { startConsole, takeItemFromWindow } from './console.js';
+
+(global as any).takeItemFromWindow = takeItemFromWindow;
 
 // =================================================================================
 // 4. MAIN EXECUTION (主程式入口)
@@ -51,16 +53,7 @@ async function main() {
     const isAnyViewerEnabled = accounts.some((acc: any) => acc.enabled && acc.enableViewer);
 
     if (isAnyViewerEnabled) {
-        logger.info('偵測到監看功能已啟用，正在載入相關模組...');
-        try {
-            (global as any).viewerModule = (await import('prismarine-viewer')).mineflayer;
-            (global as any).canvasModule = await import('canvas');
-        } catch (e: any) {
-            logger.error('無法載入監看模組！請確認您已執行 `bun install` 或 `npm install`。');
-            logger.error(e.message);
-            logger.warn('將在無監看模式下繼續運行...');
-            accounts.forEach((acc: any) => acc.enableViewer = false);
-        }
+        logger.info('偵測到監看功能已啟用。相關模組將在機器人生成時動態載入。');
     }
 
     let nextViewerPort = 3000;
