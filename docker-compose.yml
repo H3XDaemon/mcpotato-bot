@@ -1,0 +1,38 @@
+# Docker Compose 檔案，用於同時管理 bedrock_bot 和 java_bot 兩個服務
+services:
+  # 基岩版機器人服務
+  bedrock_bot:
+    build:
+      context: ./bedrock_bot  # 指定建置上下文為 bedrock_bot 資料夾
+      dockerfile: Dockerfile    # 明確指定 Dockerfile 的名稱
+    container_name: bedrock_bot  # 為容器指定一個明確的名稱
+    restart: unless-stopped      # 除非手動停止，否則容器將自動重啟
+    volumes:
+      # 掛載設定檔資料夾 (唯讀，更安全)
+      - ./bedrock_bot/config:/usr/src/app/config:ro
+      # 掛載登入資料夾，以保存登入階段
+      - ./bedrock_bot/profiles:/usr/src/app/profiles
+    stdin_open: true  # 開啟標準輸入，以便互動
+    tty: true         # 分配一個虛擬終端
+
+  # Java 版機器人服務
+  java_bot:
+    build:
+      context: ./java_bot      # 指定建置上下文為 java_bot 資料夾
+      dockerfile: Dockerfile     # 明確指定 Dockerfile 的名稱
+    container_name: java_bot   # 為容器指定一個明確的名稱
+    restart: unless-stopped
+    ports:
+      # 將容器的 3010 連接埠映射到主機的 3000 連接埠
+      # 這是為了讓您可以從瀏覽器訪問 Mineflayer 網頁監看視窗
+      # 如果您有多個 Java 機器人且都開啟了監看，請在此處新增更多連接埠 (例如 "3001:3001")
+      - "3000:3010"
+      - "3001:3011"
+    volumes:
+      # 掛載設定檔資料夾 (唯讀)
+      - ./java_bot/config:/usr/src/app/config:ro
+      # 掛載登入資料夾
+      - ./java_bot/profiles:/usr/src/app/profiles
+    stdin_open: true
+    tty: true
+
