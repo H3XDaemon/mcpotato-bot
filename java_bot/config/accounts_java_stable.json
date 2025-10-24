@@ -1,6 +1,7 @@
 [
   {
     "enabled": true,
+    "debugMode": false,
     "botTag": "JavaBot_1",
     "host": "mcpotato.xyz",
     "port": 25565,
@@ -9,8 +10,9 @@
     "enableViewer": false,
     "startWorkOnLogin": false,
     "reconnectOnDuplicateLogin": {
-    "enabled": true,
-    "delayMinutes": 60   }
+      "enabled": true,
+      "delayMinutes": 60
+    }
   },
   {
     "enabled": true,
@@ -23,7 +25,7 @@
     "startWorkOnLogin": true,
     "antiAfk": {
       "enabled": true,
-      "intervalMinutes": 4
+      "intervalMinutes": 4.5
     }
   }
 ]

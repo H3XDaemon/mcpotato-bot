@@ -8,7 +8,7 @@
     "profilePath": "./profiles/online_bot1",
     "autoWithdraw": {
       "enabled": true,
-      "intervalMinutes": 4.8,
+      "intervalMinutes": 4.5,
       "withdrawThreshold": 1135
     }
   },
@@ -21,7 +21,7 @@
     "profilePath": "./profiles/online_bot2",
     "autoWithdraw": {
       "enabled": true,
-      "intervalMinutes": 4.9,
+      "intervalMinutes": 4.6,
       "withdrawThreshold": 3500
     }
   }

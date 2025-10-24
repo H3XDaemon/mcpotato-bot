@@ -1,10 +1,8 @@
 
 import { logger, sleep, Colors } from './bot_core.js';
 import * as readline from 'readline';
-import * as util from 'util';
-import ChatMessage from 'prismarine-chat';
 
-export { startConsole, nbtToJson, openWindow, getCustomName, listWindowItems, takeItemFromWindow, interactiveWindowGui, rideVehicle };
+export { startConsole, nbtToJson, listWindowItems, takeItemFromWindow, interactiveWindowGui, rideVehicle };
 
 // =================================================================================
 // 3. CONSOLE INTERFACE (主控台介面)
@@ -33,122 +31,40 @@ function nbtToJson(nbt: any): any {
     return nbt;
 }
 
-async function openWindow(botInstance: any, command: string, windowName: string): Promise<any> {
-    if (botInstance.isGuiBusy) {
-        botInstance.logger.warn(`無法開啟 ${windowName}，因為另一個介面操作正在進行中。`);
-        return null;
-    }
 
-    const bot = botInstance.client;
-    if (!bot) {
-        botInstance.logger.warn('機器人未連線，無法開啟視窗。');
-        return null;
-    }
 
-    botInstance.isGuiBusy = true;
-    let onWindowOpen: (window: any) => void;
-    try {
-        botInstance.logger.info(`正在發送 ${command} 指令並等待 ${windowName} 介面...`);
-        const window = await new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                bot.removeListener('windowOpen', onWindowOpen);
-                reject(new Error(`等待 ${windowName} 視窗開啟超時 (10秒)`));
-            }, 10000);
 
-            onWindowOpen = (win: any) => {
-                if (win.id === 0) {
-                    botInstance.logger.debug("已忽略玩家物品欄開啟事件。");
-                    return;
-                }
-                clearTimeout(timer);
-                bot.removeListener('windowOpen', onWindowOpen);
-                resolve(win);
-            };
-
-            bot.on('windowOpen', onWindowOpen);
-            botInstance.runCommand(command);
-        });
-
-        const pollingStart = Date.now();
-        const POLLING_TIMEOUT = 10000;
-        while (Date.now() - pollingStart < POLLING_TIMEOUT) {
-            if ((window as any).containerItems().length > 0) {
-                botInstance.logger.debug(`在 ${Date.now() - pollingStart}ms 後成功載入視窗物品。`);
-                return window;
-            }
-            await sleep(250);
-        }
-        botInstance.logger.warn(`無法從 ${windowName} 載入任何物品。`);
-        return window;
-    } catch (error: any) {
-        botInstance.logger.error(`開啟 ${windowName} 視窗時發生錯誤: ${error.message}`);
-        return null;
-    } finally {
-        botInstance.isGuiBusy = false;
-    }
-}
-
-function getCustomName(item: any, botInstance: any): string | null {
-    try {
-        if (!item) return null;
-
-        if (botInstance.config.debugMode && item.components) {
-            botInstance.logger.info(`[Component Debug] 正在檢測 ${item.name} 的 components: ${util.inspect(item.components, { depth: null })}`);
-        }
-
-        let customNameData: any = null;
-
-        if (Array.isArray(item.components)) {
-            const customNameComponent = item.components.find((c: any) => c.type === 'minecraft:custom_name' || c.type === 'custom_name');
-            if (customNameComponent && customNameComponent.data) {
-                customNameData = nbtToJson(customNameComponent.data);
-            }
-        }
-        else if (item.nbt?.value?.display?.value?.Name?.value) {
-            customNameData = JSON.parse(item.nbt.value.display.value.Name.value);
-        }
-
-        if (customNameData) {
-            const ChatMessageParser = ChatMessage(botInstance.client.registry);
-            const parsedName = new ChatMessageParser(customNameData).toString().trim();
-            if (parsedName) {
-                return parsedName;
-            }
-        }
-
-        return null;
-    } catch (e: any) {
-        botInstance.logger.warn(`解析物品 ${item.name} 的自訂名稱時發生錯誤: ${e.message}`);
-        return null;
-    }
-}
 
 async function listWindowItems(botInstance: any, command: string, windowName: string): Promise<void> {
+    if (botInstance.isGuiBusy) {
+        botInstance.logger.warn(`無法執行 '${command}'，因為另一個介面操作正在進行中。`);
+        return;
+    }
+    const gui = botInstance.gui;
+    if (!gui) {
+        botInstance.logger.error('GUI 管理器尚未初始化。');
+        return;
+    }
+
     let window: any = null;
+    botInstance.isGuiBusy = true;
     try {
-        window = await openWindow(botInstance, command, windowName);
+        window = await gui.open(command);
         if (!window) return;
 
-        const items = window.containerItems();
+        const items = gui.getItems(window).filter((item: any) => item.name !== 'gray_stained_glass_pane');
+        
         botInstance.logger.chat(`--- ${botInstance.config.botTag} 的 ${windowName} 物品列表 ---`);
 
-        const relevantItems = items.filter((item: any) => item.name !== 'gray_stained_glass_pane');
-
-        if (relevantItems.length === 0) {
+        if (items.length === 0) {
             botInstance.logger.chat('   -> 介面內沒有可操作的物品。');
         } else {
-            const outputLines = relevantItems.map((item: any) => {
+            const outputLines = items.map((item: any) => {
                 const slot = `欄位: ${String(item.slot).padEnd(3)}`;
-                const displayName = item.displayName.padEnd(22);
-                const customName = getCustomName(item, botInstance);
-
-                if (customName) {
-                    return `- ${slot} | ${displayName} | ${customName}`;
-                } else {
-                    return `- ${slot} | ${item.displayName}`;
-                }
+                const name = item.styledDisplayName || item.displayName;
+                return `- ${slot} | ${name}`;
             });
-            botInstance.logger.chat(outputLines.join('\n'));
+            outputLines.forEach((line: string) => botInstance.logger.chat(line));
         }
         botInstance.logger.chat(`------------------------------------`);
 
@@ -156,20 +72,32 @@ async function listWindowItems(botInstance: any, command: string, windowName: st
         botInstance.logger.error(`處理 ${windowName} 視窗時發生錯誤: ${error.message}`);
         botInstance.logger.debug(error.stack);
     } finally {
-        if (window && botInstance.client && botInstance.client.currentWindow && botInstance.client.currentWindow.id === window.id) {
+        if (window && botInstance.client?.currentWindow?.id === window.id) {
             botInstance.client.closeWindow(window);
-            botInstance.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉。 ---`);
         }
+        botInstance.isGuiBusy = false; // Release the lock
+        botInstance.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉，鎖已釋放。 ---`);
     }
 }
 
 async function takeItemFromWindow(botInstance: any, command: string, windowName: string, slot: number): Promise<void> {
+    if (botInstance.isGuiBusy) {
+        botInstance.logger.warn(`無法執行 '${command}'，因為另一個介面操作正在進行中。`);
+        return;
+    }
+    const gui = botInstance.gui;
+    if (!gui) {
+        botInstance.logger.error('GUI 管理器尚未初始化。');
+        return;
+    }
+
     let window: any = null;
+    botInstance.isGuiBusy = true;
     try {
-        window = await openWindow(botInstance, command, windowName);
+        window = await gui.open(command);
         if (!window) return;
 
-        const items = window.containerItems();
+        const items = gui.getItems(window);
         const item = items.find((i: any) => i.slot === slot);
 
         if (!item) {
@@ -180,31 +108,38 @@ async function takeItemFromWindow(botInstance: any, command: string, windowName:
             return;
         }
 
-        botInstance.logger.info(`正在從 ${windowName} 的欄位 ${slot} 拿取 ${item.displayName}...`);
-        await botInstance.client.clickWindow(slot, 0, 0);
+        const name = item.styledDisplayName || item.displayName;
+        botInstance.logger.info(`正在從 ${windowName} 的欄位 ${slot} 拿取 ${name}...`);
+        await gui.click(slot, 'left');
         botInstance.logger.info(`✅ 已成功點擊欄位 ${slot}。`);
 
     } catch (error: any) {
         botInstance.logger.error(`從 ${windowName} 拿取物品時發生錯誤: ${error.message}`);
     } finally {
-        if (window && botInstance.client && botInstance.client.currentWindow && botInstance.client.currentWindow.id === window.id) {
+        if (window && botInstance.client?.currentWindow?.id === window.id) {
             await sleep(500);
             botInstance.client.closeWindow(window);
-            botInstance.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉。 ---`);
         }
+        botInstance.isGuiBusy = false; // Release the lock
+        botInstance.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉，鎖已釋放。 ---`);
     }
 }
 
 async function interactiveWindowGui(botInstance: any, command: string, windowName: string, rl: readline.Interface): Promise<void> {
-    let window: any = null;
-    const bot = botInstance.client;
-    if (!bot) {
-        botInstance.logger.warn('機器人未連線，無法開啟 GUI。');
+    if (botInstance.isGuiBusy) {
+        botInstance.logger.warn(`無法執行 '${command}'，因為另一個介面操作正在進行中。`);
+        return;
+    }
+    const gui = botInstance.gui;
+    if (!gui) {
+        botInstance.logger.error('GUI 管理器尚未初始化。');
         return;
     }
 
+    let window: any = null;
+    botInstance.isGuiBusy = true;
     try {
-        window = await openWindow(botInstance, command, windowName);
+        window = await gui.open(command);
         if (!window) return;
 
         logger.unsetRl();
@@ -212,14 +147,13 @@ async function interactiveWindowGui(botInstance: any, command: string, windowNam
 
         const guiLoop = async () => {
             console.log(`\n${Colors.FgCyan}--- ${botInstance.config.botTag} 的 ${windowName} 互動介面 ---${Colors.Reset}`);
-            const items = window.containerItems().filter((item: any) => item.name !== 'gray_stained_glass_pane');
+            const items = gui.getItems(window).filter((item: any) => item.name !== 'gray_stained_glass_pane');
 
             if (items.length === 0) {
                 console.log('   -> 介面是空的。');
             } else {
                 items.forEach((item: any) => {
-                    const customName = getCustomName(item, botInstance);
-                    const name = customName ? `${item.displayName} | ${customName}` : item.displayName;
+                    const name = item.styledDisplayName || item.displayName;
                     console.log(`  [${String(item.slot).padStart(2, ' ')}] ${name} (x${item.count})`);
                 });
             }
@@ -231,7 +165,7 @@ async function interactiveWindowGui(botInstance: any, command: string, windowNam
             const trimmedAnswer = answer.trim().toLowerCase();
 
             if (trimmedAnswer === 'exit' || trimmedAnswer === 'e') {
-                return;
+                return; // Exit the loop
             }
 
             const slot = parseInt(trimmedAnswer, 10);
@@ -241,18 +175,14 @@ async function interactiveWindowGui(botInstance: any, command: string, windowNam
                 return;
             }
 
-            const allContainerItems = window.containerItems();
-            const itemToClick = allContainerItems.find((i: any) => i.slot === slot);
+            const itemToClick = items.find((i: any) => i.slot === slot);
 
             if (!itemToClick) {
                 console.log(`${Colors.FgYellow}欄位 ${slot} 是空的或無效。${Colors.Reset}`);
-                if (botInstance.config.debugMode) {
-                    console.log("Available slots:", allContainerItems.map((i: any) => i.slot));
-                }
             } else {
                 console.log(`${Colors.FgGreen}正在點擊欄位 ${slot} (${itemToClick.displayName})...${Colors.Reset}`);
-                await bot.clickWindow(slot, 0, 0);
-                await sleep(500);
+                await gui.click(slot, 'left');
+                await sleep(500); // Wait for server to process
             }
 
             await guiLoop();
@@ -263,13 +193,14 @@ async function interactiveWindowGui(botInstance: any, command: string, windowNam
     } catch (error: any) {
         botInstance.logger.error(`互動式 GUI 發生錯誤: ${error.message}`);
     } finally {
-        if (window && bot.currentWindow && bot.currentWindow.id === window.id) {
-            bot.closeWindow(window);
-            botInstance.logger.info(`已關閉 ${windowName} 介面。`);
+        if (window && botInstance.client?.currentWindow?.id === window.id) {
+            botInstance.client.closeWindow(window);
         }
+        botInstance.isGuiBusy = false; // Release the lock
         rl.resume();
         logger.setRl(rl);
         rl.prompt(true);
+        botInstance.logger.debug(`--- [DEBUG] ${windowName} 互動介面已關閉，鎖已釋放。 ---`);
     }
 }
 
@@ -379,6 +310,7 @@ ${Colors.FgCyan}======================================================${Colors.R
 --- 遊戲內指令 ---
    say <訊息> [@目標]   - 在遊戲中發言
    work <start|stop> [@目標] - 啟動或停止自動 Trial Omen 工作模式
+   task <list|start|stop> [@目標] - 管理背景任務 (例如 AH, PW 掃描)
    mount <cart|boat> [@目標] - 騎乘附近的礦車或船
    dismount [@目標]     - 從坐騎上下來
    pos [@目標]          - 取得目前座標
@@ -669,6 +601,54 @@ ${Colors.FgCyan}======================================================${Colors.R
                     bot.logger.error(`執行 "inv list" 時發生錯誤: ${error.message}`);
                 }
             }
+        },
+        'task': async (args: string[]) => {
+            const { targets, cleanArgs } = parseCommandTargets(args);
+            const subCommand = cleanArgs[0]?.toLowerCase();
+
+            if (targets.length === 0) {
+                logger.error('錯誤: 未指定目標 (@)，也未選擇預設機器人來執行 task 指令。');
+                return;
+            }
+
+            for (const bot of targets) {
+                if (!bot.taskManager) {
+                    bot.logger.warn('任務管理器尚未初始化。');
+                    continue;
+                }
+
+                switch (subCommand) {
+                    case 'list': {
+                        const available = bot.taskManager.getAvailableTasks();
+                        const active = bot.taskManager.getActiveTaskName();
+                        bot.logger.info(`--- [${bot.config.botTag}] 任務列表 ---`);
+                        bot.logger.info(`可用任務: ${available.join(', ') || '無'}`);
+                        bot.logger.info(`正在執行: ${active || '無'}`);
+                        break;
+                    }
+                    case 'start': {
+                        const taskName = cleanArgs[1];
+                        if (!taskName) {
+                            bot.logger.error('請指定要啟動的任務名稱。用法: task start <TaskName>');
+                            continue;
+                        }
+                        const interval = cleanArgs[2] ? parseInt(cleanArgs[2], 10) * 1000 : undefined;
+                        if (interval !== undefined && isNaN(interval)) {
+                            bot.logger.error('無效的間隔時間，請輸入秒數。');
+                            continue;
+                        }
+                        await bot.taskManager.start(taskName, interval);
+                        break;
+                    }
+                    case 'stop': {
+                        await bot.taskManager.stop();
+                        break;
+                    }
+                    default:
+                        bot.logger.error('無效的 task 指令。支援 "list", "start <TaskName> [IntervalSeconds]", "stop"。');
+                        break;
+                }
+            }
         }
     };
 
@@ -715,8 +695,6 @@ ${Colors.FgCyan}======================================================${Colors.R
 module.exports = {
     startConsole,
     nbtToJson,
-    openWindow,
-    getCustomName,
     listWindowItems,
     takeItemFromWindow,
     interactiveWindowGui,

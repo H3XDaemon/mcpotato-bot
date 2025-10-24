@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import * as util from 'util';
@@ -38,7 +39,11 @@ const logger = (() => {
     const LogLevel: { [key: string]: number } = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, CHAT: 4 };
 
     const log = (level: number, ...args: any[]) => {
-        if (level === LogLevel.DEBUG && !process.env.DEBUG) return;
+        if (level === LogLevel.DEBUG) {
+            // If a bot is active, respect its setting. Otherwise, check the env var as a fallback for non-bot logs.
+            if (activeBotForLogging && !activeBotForLogging.config.debugMode) return;
+            if (!activeBotForLogging && !process.env.DEBUG) return;
+        }
         const isChat = level === LogLevel.CHAT;
 
         const levelMap: { [key: number]: string } = { 0: 'DEBUG', 1: 'INFO', 2: 'WARN', 3: 'ERROR' };
@@ -208,8 +213,14 @@ class TPSMonitor {
 const OMEN_CHECK_INTERVAL = 15000; // 備用檢查間隔 (15秒)
 const OMEN_REAPPLY_DELAY = 1500; // 效果結束後重新使用的延遲 (1.5秒)
 
+import { GuiManager } from './src/gui.js';
+
+import { TaskManager } from './src/taskManager.js';
+
 class BotJava {
+    taskManager: TaskManager | null;
     config: any;
+    gui: GuiManager | null;
     client: mineflayer.Bot | null;
     state: { status: string; };
     reconnectTimeout: NodeJS.Timeout | null;
@@ -220,6 +231,7 @@ class BotJava {
     effectsLogged: boolean;
     lastKnownEffects: Map<number, any>;
     reconnectAttempts: number[];
+    reconnectContext: string;
     lastSuccessfulLoginTime: number | null;
     quickDisconnectCount: number;
     consecutiveConnectionFails: number;
@@ -275,11 +287,14 @@ class BotJava {
         this.lastKnownEffects = new Map();
 
         this.reconnectAttempts = [];
+        this.reconnectContext = 'NONE';
         this.lastSuccessfulLoginTime = null;
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
         this.isDisconnecting = false;
         this.isGuiBusy = false;
+        this.gui = null;
+        this.taskManager = null;
         this.connectionGlitchHandled = false;
         this.tpsMonitor = null;
 
@@ -328,6 +343,45 @@ class BotJava {
             });
             this.client.loadPlugin(tpsPlugin);
             this.tpsMonitor = new TPSMonitor(this.client);
+            this.gui = new GuiManager(this.client);
+            this.taskManager = new TaskManager(this);
+
+            // Register default tasks
+            const { auctionHouseTask, playerWarpTask } = await import('./src/tasks.js');
+            this.taskManager.register(auctionHouseTask);
+            this.taskManager.register(playerWarpTask);
+
+            if (this.config.debugMode) {
+                const logDir = path.join(__dirname, '..', 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir);
+                }
+                const dumpFile = path.join(logDir, `packet_dump_${Date.now()}.log`);
+                this.logger.info(`[Debug] Packet logging enabled. Dumping to: ${dumpFile}`);
+
+                this.client._client.on('packet', (data: any, metadata: any) => {
+                    const ignoredPackets = [
+                        'keep_alive', 'position', 'look', 'position_look', 'rel_entity_move', 'entity_look', 'entity_head_look', 'entity_metadata', 'update_time', 'entity_velocity',
+                        'add_entity', 'animation', 'block_event', 'block_update', 'boss_event', 'bundle', 'damage_event', 'entity_event', 'sync_entity_position',
+                        'forget_level_chunk', 'level_particles', 'light_update', 'move_entity_pos', 'move_entity_pos_rot', 'move_entity_rot', 'ping',
+                        'player_info_remove', 'player_info_update', 'player_position', 'remove_entities', 'remove_mob_effect', 'rotate_head',
+                        'section_blocks_update', 'set_action_bar_text', 'set_entity_data', 'set_entity_motion', 'set_equipment', 'set_score',
+                        'set_time', 'sound_effect', 'playerlist_header', 'teleport_entity', 'update_attributes', 'update_mob_effect'
+                    ];
+                    if (ignoredPackets.includes(metadata.name)) return;
+
+                    const targetPackets = ['open_window', 'window_items', 'set_slot', 'close_window', 'custom_payload', 'plugin_message'];
+                    
+                    let line = `${new Date().toISOString()} | NAME: ${metadata.name}`;
+                    if (targetPackets.includes(metadata.name)) {
+                        line += ` | DATA: ${util.inspect(data, { depth: 4 })}\n---\n`;
+                    } else {
+                        line += '\n';
+                    }
+                    fs.appendFileSync(dumpFile, line);
+                });
+            }
+
             this._setupEventListeners();
         } catch (error: any) {
             this.logger.error(`建立機器人時發生初始錯誤: ${error.message}`);
@@ -537,14 +591,11 @@ class BotJava {
             this.logger.info(`✅ 成功登入到 ${this.config.host}:${this.config.port}，玩家名稱: ${this.client.username}`);
             this.lastSuccessfulLoginTime = Date.now();
             this.consecutiveConnectionFails = 0;
+            this.reconnectContext = 'NONE'; // Reset context on successful login
             this.connectionGlitchHandled = false;
 
             if (this.tpsMonitor) {
                 this.tpsMonitor.start();
-            }
-
-            if (this.config.startWorkOnLogin) {
-                this.startWork();
             }
 
             if (this.config.antiAfk.enabled) {
@@ -599,6 +650,11 @@ class BotJava {
         this.client.on('spawn', async () => {
             if (!this.client) return;
             this.logger.info('機器人已在遊戲世界中生成。');
+
+            // Start work mode after spawning to ensure inventory is loaded
+            if (this.config.startWorkOnLogin && !this.isWorking) {
+                this.startWork();
+            }
             await sleep(2000);
             if (this.client) {
                 this.logger.info(`目前位置: ${this.client.entity.position}`);
@@ -808,7 +864,9 @@ class BotJava {
     }
 
     _onDisconnected(source: string, reason: string | Error) {
-        if (this.isDisconnecting || this.state.status === 'STOPPED') return;
+        if (this.isDisconnecting || this.state.status === 'STOPPED') {
+            return;
+        }
         this.isDisconnecting = true;
 
         // --- [NEW] Anti-AFK Cleanup ---
@@ -862,6 +920,8 @@ class BotJava {
             this.tpsMonitor.stop();
             this.tpsMonitor = null;
         }
+        this.gui = null;
+        this.taskManager = null;
 
         if (this.client) {
             this.client.removeAllListeners();
@@ -873,26 +933,32 @@ class BotJava {
         // ++ 新增 ++ 斷線時清空已處理列表
         this.processedDropEntities.clear();
 
+        // Set context if the immediate reason is a duplicate login
         if (isLoginElsewhere) {
+            this.reconnectContext = 'DUPLICATE_LOGIN';
+        }
+
+        // Always prioritize the DUPLICATE_LOGIN context for reconnection decisions
+        if (this.reconnectContext === 'DUPLICATE_LOGIN') {
             if (this.config.reconnectOnDuplicateLogin && this.config.reconnectOnDuplicateLogin.enabled) {
                 const delayMinutes = this.config.reconnectOnDuplicateLogin.delayMinutes;
-                this.logger.warn(`帳號從其他裝置登入，已啟用定時重連功能，將在 ${delayMinutes} 分鐘後嘗試重連一次。`);
+                this.logger.warn(`處於「重複登入」的重連情境中。將在 ${delayMinutes} 分鐘後重試... (本次斷線原因: ${cleanMessageText})`);
                 this.state.status = 'STOPPED';
                 if (this.reconnectTimeout) {
                     clearTimeout(this.reconnectTimeout);
-                    this.reconnectTimeout = null;
                 }
                 this.reconnectTimeout = setTimeout(() => {
-                    this.logger.info(`已達到 ${delayMinutes} 分鐘，正在執行排定的單次重連...`);
+                    this.reconnectTimeout = null; // Apply the stale handle fix
                     this.connect();
                 }, delayMinutes * 60 * 1000);
             } else {
-                this.logger.error('帳號從其他裝置登入，將停止自動重連。');
+                this.logger.error('帳號因重複登入而斷線，且未啟用相關重連功能，將停止。');
                 this.state.status = 'STOPPED';
             }
-            return;
+            return; // Exit after handling
         }
 
+        // --- Standard Disconnect Logic ---
         if (cleanMessageText.includes('Authentication error')) {
             this.logger.error('帳號認證失敗！請檢查您的帳號或刪除 profiles 資料夾後重試。');
             this.state.status = 'STOPPED';
@@ -936,7 +1002,9 @@ class BotJava {
     }
 
     _scheduleReconnect(context: { isNetworkError?: boolean } = {}) {
-        if (this.reconnectTimeout || !this.config.enabled) return;
+        if (this.reconnectTimeout || !this.config.enabled) {
+            return;
+        }
 
         const { isNetworkError = false } = context;
 
@@ -981,12 +1049,13 @@ class BotJava {
             reason = `準備在 ${delay / 1000} 秒後重連...`;
             this.logger.info(reason);
         }
-
         this.reconnectAttempts.push(Date.now());
         this.reconnectTimeout = setTimeout(() => {
             this.reconnectTimeout = null;
             if (this.state.status !== 'STOPPED') {
                 this.connect();
+            } else {
+                this.logger.warn(`Connect aborted in _scheduleReconnect setTimeout because status is STOPPED.`);
             }
         }, delay);
     }
