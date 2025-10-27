@@ -5,12 +5,12 @@ const { atmQueue, isShuttingDown, ATM_OPERATION_TIMEOUT } = require('./atm.js');
 const { homeQueue, HOME_OPERATION_TIMEOUT } = require('./home.js');
 
 // 載入一份PC版的語言檔案，用於將物品的英文程式名稱翻譯成中文
-const mcLang = minecraftData('1.21.7').language;
+const mcLang = minecraftData('bedrock_1.21.111').language;
 
 class Bot {
     constructor(botConfig, itemMapping) {
         this.config = {
-            offline: true, profilePath: './profiles', version: '1.21.93',
+            offline: true, profilePath: './profiles', version: '1.21.111',
             autoRespawn: true,
             autoWithdraw: { enabled: false, intervalMinutes: 15, withdrawThreshold: 8000 },
             debug: false,

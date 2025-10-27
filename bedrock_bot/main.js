@@ -8,7 +8,8 @@ const home = require('./src/home.js');
 
 async function main() {
     // [關鍵修正] 讀取並解析 Geyser 的 runtimeId 映射檔案
-    const runtimeIdPath = path.join(__dirname, 'config', 'runtime_item_states.1_21_93.json');
+    const RUNTIME_ID_FILENAME = 'runtime_item_states.1_21_110.json';
+    const runtimeIdPath = path.join(__dirname, 'config', RUNTIME_ID_FILENAME);
     let itemMapping = new Map();
 
     if (fs.existsSync(runtimeIdPath)) {
@@ -19,8 +20,7 @@ async function main() {
         }
         logger.info(`成功載入 ${itemMapping.size} 個物品 ID 映射。`);
     } else {
-        logger.error(`錯誤: 找不到 runtimeId 映射檔案！ (${path.join('config', 'runtime_item_states.1_21_93.json')})`);
-        logger.error('請將 Geyser 的 runtime_item_states.json 檔案複製到 config 資料夾中。');
+        logger.error(`錯誤: 找不到 runtimeId 映射檔案！ (${runtimeIdPath})`);
         process.exit(1);
     }
 

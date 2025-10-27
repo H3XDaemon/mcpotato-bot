@@ -3,7 +3,7 @@
     "enabled": true,
     "debugMode": false,
     "botTag": "JavaBot_1",
-    "host": "mcpotato.xyz",
+    "host": "mc2.mcpotato.xyz",
     "port": 25565,
     "version": "1.21.8",
     "username": "devxeno",
@@ -17,7 +17,7 @@
   {
     "enabled": true,
     "botTag": "JavaBot_2",
-    "host": "mcpotato.xyz",
+    "host": "mc2.mcpotato.xyz",
     "port": 25565,
     "version": "1.21.8",
     "username": "void",
