@@ -15,6 +15,7 @@
   "license": "ISC",
   "dependencies": {
     "bedrock-protocol": "^3.49.0",
-    "minecraft-data": "^3.99.1"
+    "minecraft-data": "^3.99.1",
+    "winston": "^3.18.3"
   }
 }

@@ -1,7 +1,7 @@
 const readline = require('readline');
 const { logger, Colors, sleep, getAppShutdown } = require('./utils.js');
 
-function startConsole(botManager, botTagsByIndex) {
+function startConsole(botManager) {
     console.log(`\n${Colors.FgCyan}======================================================${Colors.Reset}`);
     console.log(`${Colors.FgCyan}   帳號控制台已啟動，聊天訊息將會自動顯示   ${Colors.Reset}`);
     console.log(`${Colors.FgCyan}   輸入 help 查看指令                         ${Colors.Reset}`);
@@ -9,7 +9,10 @@ function startConsole(botManager, botTagsByIndex) {
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     logger.setRl(rl);
-    let activeBot = botManager.size > 0 ? botManager.get(botTagsByIndex[0]) : null;
+
+    const botTagsByIndex = botManager.getBotTagsByIndex();
+    let activeBot = botManager.getAllBots().length > 0 ? botManager.getAllBots()[0] : null;
+
     if (activeBot) console.log(`預設操作目標已設定為: ${Colors.FgCyan}${activeBot.config.botTag}${Colors.Reset}`);
     
     /**
@@ -37,22 +40,11 @@ function startConsole(botManager, botTagsByIndex) {
                 const identifier = arg.substring(1);
                 
                 if (identifier.toLowerCase() === 'all') {
-                    targets.push(...botManager.values());
+                    targets.push(...botManager.getAllBots());
                     continue;
                 }
                 
-                const index = parseInt(identifier, 10);
-                if (!isNaN(index) && index > 0 && index <= botTagsByIndex.length) {
-                    const botTag = botTagsByIndex[index - 1];
-                    if (botManager.has(botTag)) {
-                        targets.push(botManager.get(botTag));
-                    } else {
-                        logger.error(`找不到索引為 ${index} 的機器人。`);
-                    }
-                    continue;
-                }
-
-                const bot = botManager.get(identifier);
+                const bot = botManager.getBot(identifier);
                 if (bot) {
                     targets.push(bot);
                 } else {
@@ -105,8 +97,7 @@ function startConsole(botManager, botTagsByIndex) {
         },
         'list': () => {
             console.log('\n--- 機器人狀態列表 ---');
-            botTagsByIndex.forEach((botTag, index) => {
-                const bot = botManager.get(botTag);
+            botManager.getAllBots().forEach((bot, index) => {
                 const statusColors = { 'ONLINE': Colors.FgGreen, 'CONNECTING': Colors.FgYellow, 'OFFLINE': Colors.FgRed, 'STOPPED': Colors.FgMagenta };
                 const color = statusColors[bot.state.status] || Colors.Reset;
                 const isActive = activeBot && bot.config.botTag === activeBot.config.botTag ? ` ${Colors.FgYellow}<-- 目前操作${Colors.Reset}` : '';
@@ -133,13 +124,7 @@ function startConsole(botManager, botTagsByIndex) {
         'bot': ([target]) => {
             if (!target) return console.log(`\n目前選擇的機器人: ${activeBot ? activeBot.config.botTag : '無'}`);
             const identifier = target.startsWith('@') ? target.substring(1) : target;
-            const index = parseInt(identifier, 10);
-            let foundBot = null;
-            if (!isNaN(index) && index > 0 && index <= botTagsByIndex.length) {
-                foundBot = botManager.get(botTagsByIndex[index - 1]);
-            } else {
-                foundBot = botManager.get(identifier);
-            }
+            const foundBot = botManager.getBot(identifier);
 
             if (foundBot) {
                 activeBot = foundBot;
@@ -308,7 +293,7 @@ function startConsole(botManager, botTagsByIndex) {
             const commandToRun = trimmedLine.substring(2).trim();
             if (commandToRun) {
                 logger.info(`[ALL] > /${commandToRun}`);
-                botManager.forEach(bot => {
+                botManager.getAllBots().forEach(bot => {
                     if (bot.state.status === 'ONLINE') bot.runCommand(commandToRun);
                 });
             }

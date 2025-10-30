@@ -40,16 +40,7 @@ class Bot {
 
         this.uiQueue = new QueueProcessor(this.config.botTag);
 
-        this.logger = Object.fromEntries(
-            Object.keys(logger).map(levelName => [
-                levelName,
-                (...args) => {
-                    logger.setActiveBot(this);
-                    logger[levelName](...args);
-                    logger.setActiveBot(null);
-                }
-            ]).filter(entry => typeof entry[1] === 'function')
-        );
+        this.logger = logger.child({ botTag: this.config.botTag });
     }
 
     /**
@@ -278,9 +269,9 @@ class Bot {
         if (type === 'jukebox_popup') return;
         const message = parseMinecraftColors(rawMessage);
         if (type === 'chat') {
-            this.logger.chat(`<${source_name}> ${message}`);
+            this.logger.info(`<${source_name}> ${message}`);
         } else {
-            this.logger.chat(`[Server] ${message}`);
+            this.logger.info(`[Server] ${message}`);
             if (this.config.autoWithdraw.enabled && rawMessage.includes('達到在線賺錢上限')) {
                 this.logger.info('偵測到餘額上限訊息，觸發提款檢查。');
                 this._checkAndWithdraw();
