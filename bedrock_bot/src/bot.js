@@ -150,7 +150,7 @@ class Bot {
         });
 
         this.client.on('disconnect', (p) => this._onDisconnected('disconnect', p.message));
-        this.client.on('error', (err) => this._onDisconnected('error', err.message));
+        this.client.on('error', (err) => this.logger.error('[bedrock-protocol] 發生錯誤:', err));
         this.client.on('kick', (reason) => this._onDisconnected('kick', reason.message));
         this.client.on('close', () => this._onDisconnected('close', '連線被關閉'));
         this.client.on('entity_event', (packet) => this._handleAutoRespawn(packet));
@@ -269,7 +269,7 @@ class Bot {
             });
             this.logger.info('已發送重生請求。');
         } catch (e) {
-            this.logger.error(`重生時發生錯誤: ${e.message}`);
+            this.logger.error('重生時發生錯誤:', e);
         }
     }
 
@@ -302,8 +302,7 @@ class Bot {
                 internal: false
             });
         } catch (error) {
-            this.logger.error(`執行指令時發生錯誤: ${error.message}`);
-            this._onDisconnected('command_error', error.message);
+            this.logger.error('執行指令時發生錯誤:', error);
         }
     }
 
@@ -447,7 +446,7 @@ class Bot {
                     if (!hasVisibleItems) listOutput += "ATM 看起來是空的。\n";
                     console.log("\n" + listOutput.trim());
                 } catch (error) {
-                    this.logger.error(`[ATM隊列] 任務 "查看 ATM 內容" 執行失敗: ${error.message}`);
+                    this.logger.error('[ATM隊列] 任務 "查看 ATM 內容" 執行失敗:', error);
                 } finally {
                     if (this.client && atmData?.windowId) {
                         this.client.queue('container_close', { window_id: atmData.windowId });
@@ -477,7 +476,7 @@ class Bot {
                         }
                     }
                 } catch (error) {
-                    this.logger.error(`[ATM隊列] 任務 "從 ATM 欄位 ${slot} 拿取物品" 執行失敗: ${error.message}`);
+                    this.logger.error(`[ATM隊列] 任務 "從 ATM 欄位 ${slot} 拿取物品" 執行失敗:`, error);
                 } finally {
                     if (this.client && atmData?.windowId) {
                         this.client.queue('container_close', { window_id: atmData.windowId });
@@ -555,7 +554,7 @@ class Bot {
                 atmData = null; // 防止 finally 區塊重複關閉
             }
         } catch (error) {
-             this.logger.error(`[UI隊列] 任務 "自動提款檢查" 執行失敗: ${error.message}`);
+             this.logger.error('[UI隊列] 任務 "自動提款檢查" 執行失敗:', error);
         } finally {
             if (this.client && atmData?.windowId) {
                 this.client.queue('container_close', { window_id: atmData.windowId });
@@ -609,7 +608,7 @@ class Bot {
                 await sleep(800);
             }
         } catch (error) {
-            this.logger.error(`[UI隊列] 提款序列中發生錯誤: ${error.message}`);
+            this.logger.error('[UI隊列] 提款序列中發生錯誤:', error);
         } finally {
             if (this.client && currentWindowId) {
                 this.client.queue('container_close', { window_id: currentWindowId });
@@ -651,7 +650,7 @@ class Bot {
                     console.log("\n" + listOutput.trim());
 
                 } catch (error) {
-                    this.logger.error(`[UI隊列] 任務 "列出家列表" 執行失敗: ${error.message}`);
+                    this.logger.error('[UI隊列] 任務 "列出家列表" 執行失敗:', error);
                 } finally {
                     if (this.client && homeData?.windowId) {
                         this.client.queue('container_close', { window_id: homeData.windowId });
@@ -690,7 +689,7 @@ class Bot {
                         this.logger.error(`在 Home 介面中找不到名為 "${homeName}" 的家。`);
                     }
                 } catch (error) {
-                    this.logger.error(`[UI隊列] 任務 "傳送到 ${homeName}" 執行失敗: ${error.message}`);
+                    this.logger.error(`[UI隊列] 任務 "傳送到 ${homeName}" 執行失敗:`, error);
                 } finally {
                     if (this.client && homeData?.windowId) {
                        this.logger.debug(`Home 任務完成，Window ID ${homeData.windowId} 應由伺服器關閉。`);

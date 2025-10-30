@@ -114,10 +114,10 @@ async function main() {
 
 // --- 全域錯誤處理 ---
 process.on('uncaughtException', (err, origin) => {
-    console.error('捕獲到未處理的異常:', err, '來源:', origin);
+    logger.error('捕獲到未處理的異常:', err, '來源:', origin);
 });
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('捕獲到未處理的 Promise Rejection:', reason);
+    logger.error('捕獲到未處理的 Promise Rejection:', reason);
 });
 
 main().catch(err => {
