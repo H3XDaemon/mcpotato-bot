@@ -2,9 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Bot = require('./src/bot.js');
 const { startConsole } = require('./src/console.js');
-const { logger, sleep, Colors } = require('./src/utils.js');
-const atm = require('./src/atm.js');
-const home = require('./src/home.js');
+const { logger, sleep, Colors, setAppShutdown } = require('./src/utils.js');
 
 async function main() {
     // [關鍵修正] 讀取並解析 Geyser 的 runtimeId 映射檔案
@@ -23,10 +21,6 @@ async function main() {
         logger.error(`錯誤: 找不到 runtimeId 映射檔案！ (${runtimeIdPath})`);
         process.exit(1);
     }
-
-    // 啟動所有任務隊列處理器
-    atm.atmQueue.start();
-    home.homeQueue.start();
 
     // 讀取帳號設定檔
     const configFileName = 'accounts.json';
@@ -67,8 +61,7 @@ async function main() {
     const rl = startConsole(botManager, botTagsByIndex);
 
     rl.on('close', async () => {
-        atm.setShutdown();
-        home.homeQueue.setShutdown();
+        setAppShutdown();
         console.log(`\n\n${Colors.FgYellow}--- 開始執行優雅關閉程序 ---${Colors.Reset}`);
         console.log('將不再接受新的指令，並等待現有任務完成...');
         rl.pause();
@@ -99,9 +92,15 @@ async function main() {
             }
         };
 
-        const SHUTDOWN_TIMEOUT = 30000; // 30 秒
-        await waitForQueue(atm.atmQueue, 'ATM', SHUTDOWN_TIMEOUT);
-        await waitForQueue(home.homeQueue, 'Home', SHUTDOWN_TIMEOUT);
+        console.log('正在依序關閉所有機器人任務隊列...');
+        const SHUTDOWN_TIMEOUT = 30000; // 每個隊列最多等待 30 秒
+        for (const bot of botManager.values()) {
+            if (bot.uiQueue) {
+                bot.uiQueue.setShutdown();
+                await waitForQueue(bot.uiQueue, bot.config.botTag, SHUTDOWN_TIMEOUT);
+            }
+        }
+        console.log(`${Colors.FgGreen}✓ 所有機器人任務隊列已清空或超時。${Colors.Reset}`);
 
         console.log('正在斷開所有機器人連線...');
         botManager.forEach(bot => bot.disconnect('程式關閉'));

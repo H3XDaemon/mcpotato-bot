@@ -78,9 +78,15 @@ const logger = (() => {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+let isAppShuttingDown = false;
+const setAppShutdown = () => { isAppShuttingDown = true; };
+const getAppShutdown = () => isAppShuttingDown;
+
 module.exports = {
     Colors,
     parseMinecraftColors,
     logger,
-    sleep
+    sleep,
+    setAppShutdown,
+    getAppShutdown
 };

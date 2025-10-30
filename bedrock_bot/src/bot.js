@@ -1,11 +1,20 @@
-const { createClient, ClientStatus } = require('bedrock-protocol');
+const { createClient } = require('bedrock-protocol');
 const minecraftData = require('minecraft-data');
-const { logger, sleep, parseMinecraftColors } = require('./utils.js');
-const { atmQueue, isShuttingDown, ATM_OPERATION_TIMEOUT } = require('./atm.js');
-const { homeQueue, HOME_OPERATION_TIMEOUT } = require('./home.js');
+const { logger, sleep, parseMinecraftColors, getAppShutdown } = require('./utils.js');
+const { QueueProcessor } = require('./queue.js');
+const { ATM_OPERATION_TIMEOUT } = require('./atm.js');
+const { HOME_OPERATION_TIMEOUT } = require('./home.js');
 
 // 載入一份PC版的語言檔案，用於將物品的英文程式名稱翻譯成中文
 const mcLang = minecraftData('bedrock_1.21.111').language;
+
+const ClientStatus = {
+    Disconnected: 0,
+    Connecting: 1,
+    Authenticating: 2,
+    Initializing: 3,
+    Initialized: 4
+};
 
 class Bot {
     constructor(botConfig, itemMapping) {
@@ -28,6 +37,8 @@ class Bot {
         this.lastSuccessfulLoginTime = null;
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
+
+        this.uiQueue = new QueueProcessor(this.config.botTag);
 
         this.logger = Object.fromEntries(
             Object.keys(logger).map(levelName => [
@@ -96,6 +107,7 @@ class Bot {
             this.reconnectTimeout = null;
         }
         this.stopAutoWithdraw();
+        this.uiQueue.setShutdown();
         this.client?.disconnect(); // 強制關閉連線
         this.client = null; // 確保客戶端物件為 null
     }
@@ -123,6 +135,7 @@ class Bot {
                 this.consecutiveConnectionFails = 0;
             }
             this.inventory.clear();
+            this.uiQueue.start();
             if (this.config.autoWithdraw.enabled) {
                 this.startAutoWithdraw();
             }
@@ -190,8 +203,8 @@ class Bot {
     }
 
     _scheduleReconnect() {
-        if (this.reconnectTimeout || isShuttingDown()) {
-            if (!isShuttingDown()) this.logger.debug('一個重連任務已在排程中，忽略本次請求。');
+        if (this.reconnectTimeout || getAppShutdown()) {
+            if (!getAppShutdown()) this.logger.debug('一個重連任務已在排程中，忽略本次請求。');
             return;
         }
         if (this.state.status === 'STOPPED' || !this.config.enabled) return;
@@ -411,12 +424,12 @@ class Bot {
     }
 
     listAtmContents() {
-        if (this.state.status !== 'ONLINE' || isShuttingDown()) {
+        if (this.state.status !== 'ONLINE' || this.uiQueue.isShuttingDown) {
             this.logger.warn('機器人離線或程式正在關閉，無法執行 ATM 操作。');
             return;
         }
         this.logger.info(`已將 [查看 ATM 內容] 任務加入隊列。`);
-        atmQueue.addTask(this, async () => {
+        this.uiQueue.addTask(this, async () => {
                 let atmData;
                 try {
                     atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
@@ -444,12 +457,12 @@ class Bot {
     }
 
     performTakeAction(slot, actionType) {
-        if (this.state.status !== 'ONLINE' || isShuttingDown()) {
+        if (this.state.status !== 'ONLINE' || this.uiQueue.isShuttingDown) {
             this.logger.warn('機器人離線或程式正在關閉，無法執行 ATM 操作。');
             return;
         }
         this.logger.info(`已將 [從欄位 ${slot} 執行 "${actionType}"] 任務加入隊列。`);
-        atmQueue.addTask(this, async () => {
+        this.uiQueue.addTask(this, async () => {
                 let atmData;
                 try {
                     atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
@@ -501,19 +514,19 @@ class Bot {
     }
 
     _checkAndWithdraw() {
-        if (this.state.status !== 'ONLINE' || isShuttingDown()) {
+        if (this.state.status !== 'ONLINE' || this.uiQueue.isShuttingDown) {
             this.logger.debug('機器人離線或程式正在關閉，跳過此次提款檢查。');
             return;
         }
-        const alreadyInQueue = atmQueue.getQueue().some(item => 
+        const alreadyInQueue = this.uiQueue.getQueue().some(item => 
             item.bot.config.botTag === this.config.botTag && item.description.includes('自動提款')
         );
         if (alreadyInQueue) {
             this.logger.debug('自動提款任務已在隊列中，本次跳過。');
             return;
         }
-        this.logger.info('偵測到提款需求，已將任務加入 ATM 隊列。');
-        atmQueue.addTask(this, () => this._executeWithdrawal(), `自動提款檢查 (${this.config.botTag})`);
+        this.logger.info('偵測到提款需求，已將任務加入隊列。');
+        this.uiQueue.addTask(this, () => this._executeWithdrawal(), `自動提款檢查 (${this.config.botTag})`);
     }
     
     async _executeWithdrawal() {
@@ -542,7 +555,7 @@ class Bot {
                 atmData = null; // 防止 finally 區塊重複關閉
             }
         } catch (error) {
-             this.logger.error(`[ATM隊列] 任務 "自動提款檢查" 執行失敗: ${error.message}`);
+             this.logger.error(`[UI隊列] 任務 "自動提款檢查" 執行失敗: ${error.message}`);
         } finally {
             if (this.client && atmData?.windowId) {
                 this.client.queue('container_close', { window_id: atmData.windowId });
@@ -563,7 +576,7 @@ class Bot {
 
         try {
             while (remainingAmount >= 10) {
-                if (this.state.status !== 'ONLINE' || isShuttingDown()) {
+                if (this.state.status !== 'ONLINE' || this.uiQueue.isShuttingDown) {
                     throw new Error("提款序列中斷，因為機器人已離線或程式正在關閉。");
                 }
 
@@ -596,7 +609,7 @@ class Bot {
                 await sleep(800);
             }
         } catch (error) {
-            this.logger.error(`[ATM隊列] 提款序列中發生錯誤: ${error.message}`);
+            this.logger.error(`[UI隊列] 提款序列中發生錯誤: ${error.message}`);
         } finally {
             if (this.client && currentWindowId) {
                 this.client.queue('container_close', { window_id: currentWindowId });
@@ -606,12 +619,12 @@ class Bot {
     }
 
     listHomes() {
-        if (this.state.status !== 'ONLINE' || isShuttingDown()) {
+        if (this.state.status !== 'ONLINE' || this.uiQueue.isShuttingDown) {
             this.logger.warn('機器人離線或程式正在關閉，無法執行 Home 操作。');
             return;
         }
         this.logger.info(`已將 [列出家列表] 任務加入隊列。`);
-        homeQueue.addTask(this, async () => {
+        this.uiQueue.addTask(this, async () => {
                 let homeData;
                 try {
                     homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
@@ -638,7 +651,7 @@ class Bot {
                     console.log("\n" + listOutput.trim());
 
                 } catch (error) {
-                    this.logger.error(`[Home隊列] 任務 "列出家列表" 執行失敗: ${error.message}`);
+                    this.logger.error(`[UI隊列] 任務 "列出家列表" 執行失敗: ${error.message}`);
                 } finally {
                     if (this.client && homeData?.windowId) {
                         this.client.queue('container_close', { window_id: homeData.windowId });
@@ -648,12 +661,12 @@ class Bot {
     }
 
     teleportHome(homeName) {
-        if (this.state.status !== 'ONLINE' || isShuttingDown()) {
+        if (this.state.status !== 'ONLINE' || this.uiQueue.isShuttingDown) {
             this.logger.warn('機器人離線或程式正在關閉，無法執行 Home 操作。');
             return;
         }
         this.logger.info(`已將 [傳送到 ${homeName}] 任務加入隊列。`);
-        homeQueue.addTask(this, async () => {
+        this.uiQueue.addTask(this, async () => {
                 let homeData;
                 try {
                     homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
@@ -677,7 +690,7 @@ class Bot {
                         this.logger.error(`在 Home 介面中找不到名為 "${homeName}" 的家。`);
                     }
                 } catch (error) {
-                    this.logger.error(`[Home隊列] 任務 "傳送到 ${homeName}" 執行失敗: ${error.message}`);
+                    this.logger.error(`[UI隊列] 任務 "傳送到 ${homeName}" 執行失敗: ${error.message}`);
                 } finally {
                     if (this.client && homeData?.windowId) {
                        this.logger.debug(`Home 任務完成，Window ID ${homeData.windowId} 應由伺服器關閉。`);

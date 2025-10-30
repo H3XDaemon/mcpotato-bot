@@ -1,7 +1,5 @@
 const readline = require('readline');
-const { logger, Colors, sleep } = require('./utils.js');
-const { atmQueue } = require('./atm.js');
-const { homeQueue } = require('./home.js');
+const { logger, Colors, sleep, getAppShutdown } = require('./utils.js');
 
 function startConsole(botManager, botTagsByIndex) {
     console.log(`\n${Colors.FgCyan}======================================================${Colors.Reset}`);
@@ -88,6 +86,7 @@ function startConsole(botManager, botTagsByIndex) {
             console.log('   help                       - 顯示此幫助訊息');
             console.log('   list                       - 列出所有機器人及其狀態');
             console.log('   bot <BotTag|Index>         - 切換目前操作的機器人');
+            console.log('   queue                      - 查看當前機器人的任務隊列');
             console.log('   connect [@目標]            - 連線機器人 (若為 @all 會自動延遲)');
             console.log('   disconnect [@目標]         - 斷開機器人連線');
             console.log('   exit                       - 優雅地關閉所有程式');
@@ -95,13 +94,11 @@ function startConsole(botManager, botTagsByIndex) {
             console.log('--- ATM 指令 ---');
             console.log('   atm list [@目標]           - [隊列] 查看 ATM 內容');
             console.log('   atm take <slot> [@目標]    - [隊列] 從 ATM 拿取物品');
-            console.log('   atm queue                  - 查看當前 ATM 任務隊列');
             console.log('   autowithdraw <on|off> [@目標]  - 開關自動提款功能');
             console.log('   autowithdraw status [@目標]    - 查看自動提款狀態');
             console.log('--- Home 指令 ---');
             console.log('   home list [@目標]          - [隊列] 列出所有家');
             console.log('   home tp <家名稱> [@目標]   - [隊列] 傳送到指定的家');
-            console.log('   home queue                 - 查看當前 Home 任務隊列');
             console.log('--- 遊戲內指令 ---');
             console.log('   /<指令> [@目標]            - 由指定或當前選擇的機器人執行');
             console.log('   //<指令>                   - 由所有線上機器人執行 (快捷方式)');
@@ -182,6 +179,17 @@ function startConsole(botManager, botTagsByIndex) {
                 }
             });
         },
+        'queue': () => {
+            if (!activeBot) return logger.error('錯誤: 尚未選擇任何機器人。');
+            console.log(`\n--- ${activeBot.config.botTag} 的任務隊列 ---`);
+            const queueInstance = activeBot.uiQueue.getQueue();
+            if (queueInstance.length === 0) {
+                console.log('隊列是空的。');
+            } else {
+                queueInstance.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
+            }
+            console.log('--------------------------');
+        },
         'atm': (args) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
             const [action, ...rest] = cleanArgs;
@@ -198,13 +206,6 @@ function startConsole(botManager, botTagsByIndex) {
                     const slot = parseInt(rest[0], 10);
                     if (isNaN(slot)) return logger.error('無效的欄位編號。');
                     targets.forEach(bot => bot.performTakeAction(slot, 'take'));
-                    break;
-                case 'queue':
-                    console.log('\n--- 目前 ATM 任務隊列 ---');
-                    const atmQueueInstance = atmQueue.getQueue();
-                    if (atmQueueInstance.length === 0) console.log('隊列是空的。');
-                    else atmQueueInstance.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
-                    console.log('--------------------------');
                     break;
                 default:
                     logger.error(`未知的 atm 指令: "${action}".`);
@@ -255,13 +256,6 @@ function startConsole(botManager, botTagsByIndex) {
                     const homeName = rest[0];
                     targets.forEach(bot => bot.teleportHome(homeName));
                     break;
-                case 'queue':
-                    console.log('\n--- 目前 Home 任務隊列 ---');
-                    const homeQueueInstance = homeQueue.getQueue();
-                    if (homeQueueInstance.length === 0) console.log('隊列是空的。');
-                    else homeQueueInstance.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
-                    console.log('---------------------------');
-                    break;
                 default:
                     logger.error(`未知的 home 指令: "${action}".`);
             }
@@ -304,9 +298,8 @@ function startConsole(botManager, botTagsByIndex) {
     rl.prompt();
 
     rl.on('line', async (line) => {
-        const { isShuttingDown } = require('./atm.js');
         const trimmedLine = line.trim();
-        if (!trimmedLine || (isShuttingDown && isShuttingDown())) {
+        if (!trimmedLine || getAppShutdown()) {
             rl.prompt();
             return;
         }
@@ -344,7 +337,7 @@ function startConsole(botManager, botTagsByIndex) {
     });
 
     rl.on('close', () => {
-        // 觸發優雅關機程序 (從 main.js 移過來)
+        // 觸發優雅關閉程序 (從 main.js 移過來)
         rl.emit('SIGINT');
     });
 
