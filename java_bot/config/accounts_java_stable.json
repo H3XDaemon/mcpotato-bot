@@ -11,7 +11,7 @@
     "startWorkOnLogin": false,
     "reconnectOnDuplicateLogin": {
       "enabled": true,
-      "delayMinutes": 60
+      "delayMinutes": 180
     }
   },
   {
@@ -26,6 +26,10 @@
     "antiAfk": {
       "enabled": true,
       "intervalMinutes": 4.5
+    },
+      "reconnectOnDuplicateLogin": {
+      "enabled": true,
+      "delayMinutes": 60
     }
   }
 ]
