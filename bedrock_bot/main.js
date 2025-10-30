@@ -25,8 +25,8 @@ async function main() {
     }
 
     // 啟動所有任務隊列處理器
-    atm.startQueueProcessor();
-    home.startQueueProcessor();
+    atm.atmQueue.start();
+    home.homeQueue.start();
 
     // 讀取帳號設定檔
     const configFileName = 'accounts.json';
@@ -68,24 +68,40 @@ async function main() {
 
     rl.on('close', async () => {
         atm.setShutdown();
+        home.homeQueue.setShutdown();
         console.log(`\n\n${Colors.FgYellow}--- 開始執行優雅關閉程序 ---${Colors.Reset}`);
         console.log('將不再接受新的指令，並等待現有任務完成...');
         rl.pause();
 
-        const waitForQueue = async (queue, processingFlag, name) => {
-            if (queue.length > 0 || processingFlag) {
-                console.log(`正在等待 ${queue.length + (processingFlag ? 1 : 0)} 個 ${name} 任務執行完畢...`);
-                while(queue.length > 0 || processingFlag) {
+        const waitForQueue = async (queue, name, timeout) => {
+            const queueInstance = queue.getQueue();
+            if (queueInstance.length === 0 && !queue.isProcessing) {
+                console.log(`${Colors.FgGreen}✓ ${name} 任務隊列是空的，無需等待。${Colors.Reset}`);
+                return;
+            }
+
+            console.log(`正在等待 ${queueInstance.length + (queue.isProcessing ? 1 : 0)} 個 ${name} 任務執行完畢...`);
+
+            const waitPromise = (async () => {
+                while (queueInstance.length > 0 || queue.isProcessing) {
                     await sleep(1000);
                 }
-                console.log(`${Colors.FgGreen}✓ ${name} 任務隊列已清空。${Colors.Reset}`);
+            })();
+
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), timeout));
+
+            const result = await Promise.race([waitPromise, timeoutPromise]);
+
+            if (result === 'timeout') {
+                console.log(`${Colors.FgRed}✗ 等待 ${name} 任務隊列超时 (${timeout / 1000}秒)，強制繼續... ${Colors.Reset}`);
             } else {
-                console.log(`${Colors.FgGreen}✓ ${name} 任務隊列是空的，無需等待。${Colors.Reset}`);
+                console.log(`${Colors.FgGreen}✓ ${name} 任務隊列已清空。${Colors.Reset}`);
             }
         };
 
-        await waitForQueue(atm.atmQueue, atm.isAtmProcessing, 'ATM');
-        await waitForQueue(home.homeQueue, home.isHomeProcessing, 'Home');
+        const SHUTDOWN_TIMEOUT = 30000; // 30 秒
+        await waitForQueue(atm.atmQueue, 'ATM', SHUTDOWN_TIMEOUT);
+        await waitForQueue(home.homeQueue, 'Home', SHUTDOWN_TIMEOUT);
 
         console.log('正在斷開所有機器人連線...');
         botManager.forEach(bot => bot.disconnect('程式關閉'));

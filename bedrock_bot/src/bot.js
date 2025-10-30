@@ -1,4 +1,4 @@
-const bedrock = require('bedrock-protocol');
+const { createClient, ClientStatus } = require('bedrock-protocol');
 const minecraftData = require('minecraft-data');
 const { logger, sleep, parseMinecraftColors } = require('./utils.js');
 const { atmQueue, isShuttingDown, ATM_OPERATION_TIMEOUT } = require('./atm.js');
@@ -70,30 +70,34 @@ class Bot {
         }
         this.state.status = 'CONNECTING';
         this.logger.info(`正在連接至 ${this.config.host}:${this.config.port}...`);
-        try {
-            const usernameForLogin = this.config.offline ? '.' + this.config.botTag : this.config.botTag;
-            this.client = bedrock.createClient({
-                host: this.config.host, port: this.config.port, version: this.config.version,
-                offline: this.config.offline, username: usernameForLogin,
-                profilesFolder: this.config.profilePath, connectTimeout: 10000
-            });
-            this._setupEventListeners();
-        } catch (error) {
-            this.logger.error(`連線時發生錯誤: ${error.message}`);
-            this._onDisconnected('connect_error', error.message);
-        }
+
+        const usernameForLogin = this.config.offline ? '.' + this.config.botTag : this.config.botTag;
+        this.client = createClient({
+            host: this.config.host, port: this.config.port, version: this.config.version,
+            offline: this.config.offline, username: usernameForLogin,
+            profilesFolder: this.config.profilePath, connectTimeout: 10000
+        });
+        this._setupEventListeners();
     }
 
     disconnect(reason = '手動斷開連線') {
-        if (this.state.status === 'OFFLINE' || this.state.status === 'STOPPED') return;
-        this.logger.info(`手動斷開連線: ${reason}`);
-        this.state.status = 'STOPPED';
+        // 總是嘗試關閉客戶端連線，無論內部狀態如何
+        if (this.client && this.client.status !== ClientStatus.Disconnected) { // 只有在客戶端實際活躍時才記錄日誌
+            this.logger.info(`手動斷開連線: ${reason}`);
+        } else if (this.state.status === 'STOPPED') {
+            // 如果已經停止且客戶端為 null/已關閉，則直接返回
+            return;
+        }
+
+        this.state.status = 'STOPPED'; // 設定狀態為 STOPPED
+        
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
         }
         this.stopAutoWithdraw();
-        this.client?.close();
+        this.client?.disconnect(); // 強制關閉連線
+        this.client = null; // 確保客戶端物件為 null
     }
 
     _setupEventListeners() {
@@ -195,7 +199,7 @@ class Bot {
         const COOLDOWN_DELAY = 60 * 1000;
         const LONG_TERM_WINDOW = 30 * 60 * 1000;
         const MAX_LONG_TERM_ATTEMPTS = 10;
-        const SUSPENSION_DELAY = 5 * 60 * 1000;
+        const SUSPENSION_DELAY = 1 * 60 * 1000;
         const MAX_QUICK_DISCONNECTS = 3;
         let delay = RECONNECT_DELAY;
         let reason = '';
@@ -222,7 +226,7 @@ class Bot {
                 this.logger.info(reason);
             }
         }
-        if (this.client && !this.client.closed) this.client.close();
+        if (this.client && this.client.status !== ClientStatus.Disconnected) this.client.disconnect();
         this.reconnectAttempts.push(Date.now());
         this.reconnectTimeout = setTimeout(() => {
             this.reconnectTimeout = null;
@@ -232,7 +236,7 @@ class Bot {
 
     async _handleAutoRespawn(packet) {
         if (!this.config.autoRespawn) return;
-        if (this.client && packet.event_id === 'death_animation' && packet.runtime_entity_id === this.client.entityId) {
+        if (this.client && packet.event_id === 'death_animation' && BigInt(packet.runtime_entity_id) === this.client.entityId) {
             this.logger.info('偵測到死亡，將在 2 秒後自動重生...');
             await sleep(2000);
             this.manualRespawn();
@@ -412,10 +416,7 @@ class Bot {
             return;
         }
         this.logger.info(`已將 [查看 ATM 內容] 任務加入隊列。`);
-        atmQueue.push({
-            bot: this,
-            description: `查看 ATM 內容 (${this.config.botTag})`,
-            task: async () => {
+        atmQueue.addTask(this, async () => {
                 let atmData;
                 try {
                     atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
@@ -439,8 +440,7 @@ class Bot {
                         this.client.queue('container_close', { window_id: atmData.windowId });
                     }
                 }
-            }
-        });
+            }, `查看 ATM 內容 (${this.config.botTag})`);
     }
 
     performTakeAction(slot, actionType) {
@@ -449,10 +449,7 @@ class Bot {
             return;
         }
         this.logger.info(`已將 [從欄位 ${slot} 執行 "${actionType}"] 任務加入隊列。`);
-        atmQueue.push({
-            bot: this,
-            description: `從 ATM 欄位 ${slot} 拿取物品 (${this.config.botTag})`,
-            task: async () => {
+        atmQueue.addTask(this, async () => {
                 let atmData;
                 try {
                     atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
@@ -473,8 +470,7 @@ class Bot {
                         this.client.queue('container_close', { window_id: atmData.windowId });
                     }
                 }
-            }
-        });
+            }, `從 ATM 欄位 ${slot} 拿取物品 (${this.config.botTag})`);
     }
 
     startAutoWithdraw() {
@@ -488,13 +484,17 @@ class Bot {
             return;
         }
         this.logger.info(`已啟動自動提款，每 ${this.config.autoWithdraw.intervalMinutes} 分鐘檢查一次。`);
+        this._runAutoWithdrawLoop(intervalMs);
+    }
+
+    _runAutoWithdrawLoop(intervalMs) {
         this._checkAndWithdraw();
-        this.autoWithdrawIntervalId = setInterval(() => this._checkAndWithdraw(), intervalMs);
+        this.autoWithdrawIntervalId = setTimeout(() => this._runAutoWithdrawLoop(intervalMs), intervalMs);
     }
 
     stopAutoWithdraw() {
         if (this.autoWithdrawIntervalId) {
-            clearInterval(this.autoWithdrawIntervalId);
+            clearTimeout(this.autoWithdrawIntervalId);
             this.autoWithdrawIntervalId = null;
             this.logger.info('已停止自動提款。');
         }
@@ -505,7 +505,7 @@ class Bot {
             this.logger.debug('機器人離線或程式正在關閉，跳過此次提款檢查。');
             return;
         }
-        const alreadyInQueue = atmQueue.some(item => 
+        const alreadyInQueue = atmQueue.getQueue().some(item => 
             item.bot.config.botTag === this.config.botTag && item.description.includes('自動提款')
         );
         if (alreadyInQueue) {
@@ -513,11 +513,7 @@ class Bot {
             return;
         }
         this.logger.info('偵測到提款需求，已將任務加入 ATM 隊列。');
-        atmQueue.push({
-            bot: this,
-            task: () => this._executeWithdrawal(),
-            description: `自動提款檢查 (${this.config.botTag})`
-        });
+        atmQueue.addTask(this, () => this._executeWithdrawal(), `自動提款檢查 (${this.config.botTag})`);
     }
     
     async _executeWithdrawal() {
@@ -615,10 +611,7 @@ class Bot {
             return;
         }
         this.logger.info(`已將 [列出家列表] 任務加入隊列。`);
-        homeQueue.push({
-            bot: this,
-            description: `列出家列表 (${this.config.botTag})`,
-            task: async () => {
+        homeQueue.addTask(this, async () => {
                 let homeData;
                 try {
                     homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
@@ -651,8 +644,7 @@ class Bot {
                         this.client.queue('container_close', { window_id: homeData.windowId });
                     }
                 }
-            }
-        });
+            }, `列出家列表 (${this.config.botTag})`);
     }
 
     teleportHome(homeName) {
@@ -661,10 +653,7 @@ class Bot {
             return;
         }
         this.logger.info(`已將 [傳送到 ${homeName}] 任務加入隊列。`);
-        homeQueue.push({
-            bot: this,
-            description: `傳送到 ${homeName} (${this.config.botTag})`,
-            task: async () => {
+        homeQueue.addTask(this, async () => {
                 let homeData;
                 try {
                     homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
@@ -694,8 +683,7 @@ class Bot {
                        this.logger.debug(`Home 任務完成，Window ID ${homeData.windowId} 應由伺服器關閉。`);
                     }
                 }
-            }
-        });
+            }, `傳送到 ${homeName} (${this.config.botTag})`);
     }
 }
 

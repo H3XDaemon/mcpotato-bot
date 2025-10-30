@@ -201,8 +201,9 @@ function startConsole(botManager, botTagsByIndex) {
                     break;
                 case 'queue':
                     console.log('\n--- 目前 ATM 任務隊列 ---');
-                    if (atmQueue.length === 0) console.log('隊列是空的。');
-                    else atmQueue.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
+                    const atmQueueInstance = atmQueue.getQueue();
+                    if (atmQueueInstance.length === 0) console.log('隊列是空的。');
+                    else atmQueueInstance.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
                     console.log('--------------------------');
                     break;
                 default:
@@ -256,8 +257,9 @@ function startConsole(botManager, botTagsByIndex) {
                     break;
                 case 'queue':
                     console.log('\n--- 目前 Home 任務隊列 ---');
-                    if (homeQueue.length === 0) console.log('隊列是空的。');
-                    else homeQueue.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
+                    const homeQueueInstance = homeQueue.getQueue();
+                    if (homeQueueInstance.length === 0) console.log('隊列是空的。');
+                    else homeQueueInstance.forEach((item, index) => console.log(`${index + 1}. ${item.description}`));
                     console.log('---------------------------');
                     break;
                 default:
