@@ -1,47 +1,59 @@
 const winston = require('winston');
 const readline = require('readline');
-
-const Colors = {
-    Reset: "\x1b[0m", FgGreen: "\x1b[32m", FgRed: "\x1b[31m", FgYellow: "\x1b[33m", FgCyan: "\x1b[36m", FgMagenta: "\x1b[35m",
-};
+const Transport = require('winston-transport');
+const { Colors } = require('./colors.js');
 
 let rlInterface = null;
 
-const consoleFormat = winston.format.printf(({ level, message, timestamp, botTag, ...metadata }) => {
-    let levelStr = `[${level.toUpperCase()}]`;
-    if (level === 'info') levelStr = `[${Colors.FgGreen}INFO${Colors.Reset}]`;
-    if (level === 'warn') levelStr = `[${Colors.FgYellow}WARN${Colors.Reset}]`;
-    if (level === 'error') levelStr = `[${Colors.FgRed}ERROR${Colors.Reset}]`;
-    if (level === 'debug') levelStr = `[${Colors.FgMagenta}DEBUG${Colors.Reset}]`;
+// [核心修正] 建立一個自訂的 Winston Transport 來正確處理 readline 介面
+// 這可以避免在格式化函式中產生副作用，並解決 'undefined' 的問題
+class ReadlineConsoleTransport extends Transport {
+  log(info, callback) {
+    setImmediate(() => {
+      this.emit('logged', info);
+    });
 
-    const botPrefix = botTag ? `[${Colors.FgCyan}${botTag}${Colors.Reset}] ` : '';
-    
-    let msg = `[${timestamp}] ${levelStr} ${botPrefix}${message}`;
+    // 從 info 物件中獲取最終格式化（且已上色）的訊息
+    const message = info[Symbol.for('message')];
 
     if (rlInterface) {
-        readline.cursorTo(process.stdout, 0);
-        readline.clearLine(process.stdout, 1);
-        process.stdout.write(msg + '\n');
-        rlInterface.prompt(true);
+      // 儲存使用者目前輸入的內容
+      const currentLine = rlInterface.line;
+      // 清除目前行，印出日誌，然後重繪提示符與使用者輸入
+      readline.cursorTo(process.stdout, 0);
+      readline.clearLine(process.stdout, 1);
+      process.stdout.write(message + '\n');
+      rlInterface.prompt(true);
     } else {
-        console.log(msg);
+      // 如果沒有 readline 介面，就使用標準的 console.log
+      console.log(message);
     }
-});
 
+    if (callback) {
+      callback();
+    }
+  }
+}
+
+// printf 函式現在只負責格式化，不產生任何副作用
+const consoleFormat = winston.format.printf(({ level, message, timestamp, botTag }) => {
+    const botPrefix = botTag ? `[${Colors.FgCyan}${botTag}${Colors.Reset}] ` : '';
+    return `[${timestamp}] [${level}] ${botPrefix}${message}`;
+});
 
 const logger = winston.createLogger({
     level: process.env.DEBUG ? 'debug' : 'info',
     format: winston.format.combine(
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         winston.format.errors({ stack: true }),
-        winston.format.splat(),
-        winston.format.json()
+        winston.format.splat()
     ),
     transports: [
-        new winston.transports.Console({
+        // 使用我們自訂的 transport
+        new ReadlineConsoleTransport({
             format: winston.format.combine(
-                winston.format.colorize(),
-                consoleFormat
+                winston.format.colorize(), // 先上色
+                consoleFormat              // 再套用我們的格式
             )
         }),
         new winston.transports.File({ filename: 'error.log', level: 'error' }),
@@ -52,6 +64,5 @@ const logger = winston.createLogger({
 logger.setRl = (rl) => {
     rlInterface = rl;
 };
-
 
 module.exports = { logger };

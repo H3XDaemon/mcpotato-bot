@@ -1,5 +1,6 @@
 const readline = require('readline');
-const { logger, Colors, sleep, getAppShutdown } = require('./utils.js');
+const { logger, sleep, getAppShutdown } = require('./utils.js');
+const { Colors } = require('./colors.js');
 
 function startConsole(botManager) {
     console.log(`\n${Colors.FgCyan}======================================================${Colors.Reset}`);
