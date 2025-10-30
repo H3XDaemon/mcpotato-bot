@@ -269,9 +269,9 @@ class Bot {
         if (type === 'jukebox_popup') return;
         const message = parseMinecraftColors(rawMessage);
         if (type === 'chat') {
-            this.logger.info(`<${source_name}> ${message}`);
+            this.logger.info(`<${source_name}> ${message}`, { isChatMessage: true });
         } else {
-            this.logger.info(`[Server] ${message}`);
+            this.logger.info(`[Server] ${message}`, { isChatMessage: true });
             if (this.config.autoWithdraw.enabled && rawMessage.includes('達到在線賺錢上限')) {
                 this.logger.info('偵測到餘額上限訊息，觸發提款檢查。');
                 this._checkAndWithdraw();

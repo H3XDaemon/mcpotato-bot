@@ -36,8 +36,12 @@ class ReadlineConsoleTransport extends Transport {
 }
 
 // printf 函式現在只負責格式化，不產生任何副作用
-const consoleFormat = winston.format.printf(({ level, message, timestamp, botTag }) => {
+const consoleFormat = winston.format.printf(({ level, message, timestamp, botTag, isChatMessage }) => {
     const botPrefix = botTag ? `[${Colors.FgCyan}${botTag}${Colors.Reset}] ` : '';
+    // [核心修正] 根據 isChatMessage 旗標來決定是否顯示日誌級別
+    if (isChatMessage) {
+        return `[${timestamp}] ${botPrefix}${message}`;
+    }
     return `[${timestamp}] [${level}] ${botPrefix}${message}`;
 });
 
