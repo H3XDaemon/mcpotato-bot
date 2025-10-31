@@ -104,7 +104,6 @@ class Bot {
     }
 
     _setupEventListeners() {
-        // [核心修正] 移除 whitelist 相關的無用程式碼
         this.client.on('packet', (packet) => {
             if (!this.config.debug) return;
             
@@ -140,16 +139,28 @@ class Bot {
             });
         });
 
-        this.client.on('disconnect', (p) => this._onDisconnected('disconnect', p.message));
+        // [核心修正] 簡化事件監聽，以 'close' 作為主要斷線處理入口
+        this.client.on('close', () => this._onDisconnected('close', '連線被關閉'));
+
+        // 僅記錄 kick 事件，因為 close 事件會隨後觸發
+        this.client.on('kick', (reason) => {
+            this.logger.warn(`被伺服器踢出: ${reason.message}`);
+        });
+
+        // 監聽 error 事件，僅記錄日誌，但特別處理 Ping timed out 的異常情況
         this.client.on('error', (err) => {
             this.logger.error('[bedrock-protocol] 發生錯誤:', err);
-            if (this.client && this.client.connection && !this.client.connection.connected) {
-                this.logger.warn('偵測到錯誤後，底層連線已中斷，觸發重連。');
-                this._onDisconnected('error', err.message);
+            if (err.message?.includes('timed out')) { // 更廣泛的超時檢測
+                this.logger.warn('偵測到超時錯誤，手動觸發重連機制...');
+                this._onDisconnected('error_timeout', err.message);
             }
         });
-        this.client.on('kick', (reason) => this._onDisconnected('kick', reason.message));
-        this.client.on('close', () => this._onDisconnected('close', '連線被關閉'));
+
+        // 'disconnect' 封包事件也僅用於記錄
+        this.client.on('disconnect', (p) => {
+            this.logger.warn(`收到伺服器斷線封包: ${p.message}`);
+        });
+
         this.client.on('entity_event', (packet) => this._handleAutoRespawn(packet));
         this.client.on('inventory_content', (packet) => {
             if (packet.window_id === 'inventory') {
@@ -166,20 +177,27 @@ class Bot {
     }
 
     _onDisconnected(source, reason) {
-        if (this.state.status === 'OFFLINE' || this.state.status === 'STOPPED') return;
-        const wasConnecting = this.state.status === 'CONNECTING';
-        const wasOnline = this.state.status === 'ONLINE';
-        this.logger.warn(`斷線事件來源 [${source}]，原因: ${reason || '未知'}`);
-        if (reason && reason.includes('another location')) {
-            this.logger.error('帳號從其他裝置登入，將不會自動重連。');
-            this.state.status = 'STOPPED';
-            this.stopAutoWithdraw();
+        // [核心修正] 狀態機守衛：立即檢查並設定狀態，防止重複進入。
+        if (this.state.status === 'OFFLINE' || this.state.status === 'STOPPED') {
             return;
         }
+        const previousStatus = this.state.status;
         this.state.status = 'OFFLINE';
+
+        this.logger.warn(`斷線事件來源 [${source}]，原因: ${reason || '未知'}，先前狀態: ${previousStatus}`);
+
+        if (reason && reason.includes('another location')) {
+            this.logger.error('帳號從其他裝置登入，將不會自動重連。');
+            this.state.status = 'STOPPED'; // Override to STOPPED
+            this.stopAutoWithdraw();
+            this.client = null;
+            return;
+        }
+        
         this.client = null;
         this.stopAutoWithdraw();
-        if (wasOnline) {
+
+        if (previousStatus === 'ONLINE') {
             this.consecutiveConnectionFails = 0;
             const QUICK_DISCONNECT_WINDOW = 60 * 1000;
             const MAX_QUICK_DISCONNECTS = 3;
@@ -192,7 +210,7 @@ class Bot {
                     this.quickDisconnectCount = 0;
                 }
             }
-        } else if (wasConnecting) {
+        } else if (previousStatus === 'CONNECTING') {
             this.consecutiveConnectionFails++;
             this.logger.warn(`連線失敗，連續失敗次數: ${this.consecutiveConnectionFails}`);
         }
