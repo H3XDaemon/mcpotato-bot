@@ -22,7 +22,14 @@ class QueueProcessor {
             }
 
             this.isProcessing = true;
-            const { bot, task, description } = this.queue.shift();
+            const queueItem = this.queue.shift();
+
+            if (!queueItem) {
+                this.isProcessing = false;
+                continue;
+            }
+
+            const { bot, task, description } = queueItem;
 
             bot.logger.debug(`[${this.name}隊列] 開始執行任務: "${description}" (剩餘 ${this.queue.length} 個)`);
 
