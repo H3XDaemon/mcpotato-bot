@@ -320,6 +320,12 @@ class BotJava {
             return;
         }
 
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+            this.logger.info('手動連接，已清除預定的重連延遲。');
+        }
+
         this.isDisconnecting = false;
         this.state.status = 'CONNECTING';
         this.logger.info(`正在連接至 ${this.config.host}:${this.config.port}...`);
