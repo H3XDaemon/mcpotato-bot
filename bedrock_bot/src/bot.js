@@ -141,7 +141,13 @@ class Bot {
         });
 
         this.client.on('disconnect', (p) => this._onDisconnected('disconnect', p.message));
-        this.client.on('error', (err) => this.logger.error('[bedrock-protocol] 發生錯誤:', err));
+        this.client.on('error', (err) => {
+            this.logger.error('[bedrock-protocol] 發生錯誤:', err);
+            if (this.client && this.client.connection && !this.client.connection.connected) {
+                this.logger.warn('偵測到錯誤後，底層連線已中斷，觸發重連。');
+                this._onDisconnected('error', err.message);
+            }
+        });
         this.client.on('kick', (reason) => this._onDisconnected('kick', reason.message));
         this.client.on('close', () => this._onDisconnected('close', '連線被關閉'));
         this.client.on('entity_event', (packet) => this._handleAutoRespawn(packet));
