@@ -77,7 +77,8 @@ class Bot {
         this.client = createClient({
             host: this.config.host, port: this.config.port, version: this.config.version,
             offline: this.config.offline, username: usernameForLogin,
-            profilesFolder: this.config.profilePath, connectTimeout: 10000
+            profilesFolder: this.config.profilePath, connectTimeout: 10000,
+            followPort: false
         });
         this._setupEventListeners();
     }
