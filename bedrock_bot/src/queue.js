@@ -45,6 +45,7 @@ class QueueProcessor {
     }
 
     start() {
+        this.isShuttingDown = false;
         this.processQueue();
     }
 
