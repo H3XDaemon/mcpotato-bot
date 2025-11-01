@@ -510,13 +510,16 @@ class Bot {
             this.logger.error('自動提款間隔時間設定無效。');
             return;
         }
-        this.logger.info(`已啟動自動提款，每 ${this.config.autoWithdraw.intervalMinutes} 分鐘檢查一次。`);
-        this._runAutoWithdrawLoop(intervalMs);
-    }
 
-    _runAutoWithdrawLoop(intervalMs) {
-        this._checkAndWithdraw();
-        this.autoWithdrawIntervalId = setTimeout(() => this._runAutoWithdrawLoop(intervalMs), intervalMs);
+        const tick = () => {
+            this._checkAndWithdraw();
+            // 執行完後，排定下一次 tick
+            this.autoWithdrawIntervalId = setTimeout(tick, intervalMs);
+        };
+
+        // 排定第一次 tick，這樣就能確保第一次執行是在間隔時間之後
+        this.autoWithdrawIntervalId = setTimeout(tick, intervalMs);
+        this.logger.info(`已啟動自動提款，首次檢查將在 ${this.config.autoWithdraw.intervalMinutes} 分鐘後進行。`);
     }
 
     stopAutoWithdraw() {
