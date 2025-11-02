@@ -326,6 +326,8 @@ class BotJava {
             this.logger.info('手動連接，已清除預定的重連延遲。');
         }
 
+        // ++ FIX ++ 手動連接時重設重連情境，避免卡在「重複登入」等特殊狀態
+        this.reconnectContext = 'NONE';
         this.isDisconnecting = false;
         this.state.status = 'CONNECTING';
         this.logger.info(`正在連接至 ${this.config.host}:${this.config.port}...`);
