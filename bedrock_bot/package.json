@@ -14,8 +14,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bedrock-protocol": "^3.49.0",
-    "minecraft-data": "^3.99.1",
+    "bedrock-protocol": "^3.50.0",
+    "minecraft-data": "^3.100.0",
     "winston": "^3.18.3",
     "winston-transport": "^4.9.0"
   }
