@@ -46,6 +46,15 @@ async function main() {
         process.exit(1);
     }
 
+    const serversPath = path.join(__dirname, '..', 'config', 'servers.json');
+    if (!fs.existsSync(serversPath)) {
+        logger.error(`錯誤: 找不到伺服器設定檔！ (config/servers.json)`);
+        process.exit(1);
+    }
+
+    const servers = JSON.parse(fs.readFileSync(serversPath, 'utf-8'));
+    logger.info('已成功讀取伺服器設定檔。');
+
     const accounts = JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
     const botManager = new Map<string, BotJava>();
     const botTagsByIndex: string[] = [];
@@ -63,6 +72,20 @@ async function main() {
             continue;
         }
 
+        const serverName = config.server;
+        const serverInfo = servers[serverName];
+
+        if (!serverInfo) {
+            logger.error(`[設定錯誤] 機器人 ${config.botTag} 指定的伺服器 '${serverName}' 在 servers.json 中找不到，已跳過。`);
+            continue;
+        }
+
+        const serverList = [serverInfo.primary, ...(serverInfo.backups || [])].filter(s => s && s.host && s.port);
+        if (serverList.length === 0) {
+            logger.error(`[設定錯誤] 伺服器 '${serverName}' 沒有設定任何有效的 primary 或 backup IP，已跳過機器人 ${config.botTag}。`);
+            continue;
+        }
+
         if (config.enabled && config.enableViewer) {
             config.viewerPort = nextViewerPort;
             logger.info(`為 ${config.botTag} 分配監看埠: ${config.viewerPort}`);
@@ -71,7 +94,7 @@ async function main() {
             config.enableViewer = false;
         }
 
-        botManager.set(config.botTag, new BotJava(config));
+        botManager.set(config.botTag, new BotJava(config, serverList));
         botTagsByIndex.push(config.botTag);
     }
     logger.info(`已從 ${configFileName} 載入 ${botManager.size} 個帳號設定。`);

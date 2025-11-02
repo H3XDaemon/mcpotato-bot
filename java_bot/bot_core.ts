@@ -232,6 +232,8 @@ class BotJava {
     lastKnownEffects: Map<number, any>;
     reconnectAttempts: number[];
     reconnectContext: string;
+    serverList: { host: string, port: number }[];
+    currentServerIndex: number;
     lastSuccessfulLoginTime: number | null;
     quickDisconnectCount: number;
     consecutiveConnectionFails: number;
@@ -243,7 +245,7 @@ class BotJava {
     processedDropEntities: Set<number>;
     logger: any;
 
-    constructor(botConfig: CustomBotOptions) {
+    constructor(botConfig: CustomBotOptions, serverList: { host: string, port: number }[]) {
         const defaultConfig = {
             version: '1.21',
             auth: 'microsoft',
@@ -268,6 +270,17 @@ class BotJava {
         }
         if (botConfig && botConfig.reconnectOnDuplicateLogin) {
             this.config.reconnectOnDuplicateLogin = { ...defaultConfig.reconnectOnDuplicateLogin, ...botConfig.reconnectOnDuplicateLogin };
+        }
+
+        this.serverList = serverList;
+        this.currentServerIndex = 0;
+        if (serverList.length > 0) {
+            this.config.host = serverList[0].host;
+            this.config.port = serverList[0].port;
+        } else {
+            // Fallback or error if no servers are provided
+            this.config.host = ''; // Set to a default/invalid value
+            this.config.port = 0;
         }
 
         this.client = null;
@@ -330,12 +343,14 @@ class BotJava {
         this.reconnectContext = 'NONE';
         this.isDisconnecting = false;
         this.state.status = 'CONNECTING';
-        this.logger.info(`正在連接至 ${this.config.host}:${this.config.port}...`);
+        const currentServer = this.serverList[this.currentServerIndex];
+        const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
+        this.logger.info(`[${serverTag}] 正在連接至 ${currentServer.host}:${currentServer.port}...`);
 
         try {
             this.client = mineflayer.createBot({
-                host: this.config.host,
-                port: this.config.port,
+                host: currentServer.host,
+                port: currentServer.port,
                 username: this.config.username,
                 version: this.config.version,
                 auth: 'microsoft',
@@ -596,7 +611,15 @@ class BotJava {
         this.client.on('login', () => {
             if (!this.client) return;
             this.state.status = 'ONLINE';
-            this.logger.info(`✅ 成功登入到 ${this.config.host}:${this.config.port}，玩家名稱: ${this.client.username}`);
+            const connectedServer = this.serverList[this.currentServerIndex];
+            const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
+            this.logger.info(`✅ 成功登入到 [${serverTag}] 伺服器 ${connectedServer.host}:${connectedServer.port}，玩家名稱: ${this.client.username}`);
+            
+            if (this.currentServerIndex !== 0) {
+                this.logger.info('已連上備用伺服器，下次重連時將優先嘗試主要伺服器。');
+                this.currentServerIndex = 0;
+            }
+
             this.lastSuccessfulLoginTime = Date.now();
             this.consecutiveConnectionFails = 0;
             this.reconnectContext = 'NONE'; // Reset context on successful login
@@ -1001,6 +1024,13 @@ class BotJava {
             // This was a failure during the connection process.
             this.consecutiveConnectionFails++;
             this.logger.warn(`連線失敗，連續失敗次數: ${this.consecutiveConnectionFails}`);
+
+            if (this.serverList.length > 1) {
+                this.currentServerIndex = (this.currentServerIndex + 1) % this.serverList.length;
+                const nextServer = this.serverList[this.currentServerIndex];
+                const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
+                this.logger.info(`將切換到下一個 [${serverTag}] 伺服器: ${nextServer.host}:${nextServer.port}`);
+            }
         }
         // ======================= RECONNECT LOGIC FIX END =========================
 
