@@ -14,3 +14,5 @@ yarn-error.log*
 # 其他
 .DS_Store
 .env
+# Backup files
+*.bak
