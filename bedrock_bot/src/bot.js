@@ -32,6 +32,9 @@ class Bot {
         this.requestIdCounter = -Math.floor(Math.random() * 1000);
         this.reconnectTimeout = null;
         this.autoWithdrawIntervalId = null;
+
+        this.serverList = this.config.serverList || [];
+        this.currentServerIndex = 0;
         
         this.reconnectAttempts = [];
         this.lastSuccessfulLoginTime = null;
@@ -66,16 +69,25 @@ class Bot {
     }
 
     async connect() {
+        if (this.serverList.length === 0) {
+            this.logger.error('設定檔中未提供任何有效的伺服器IP，無法連線。');
+            this.state.status = 'STOPPED';
+            return;
+        }
+
         if (this.state.status === 'CONNECTING' || this.state.status === 'ONLINE') {
             this.logger.warn('連線請求被忽略，機器人正在連線或已在線上。');
             return;
         }
         this.state.status = 'CONNECTING';
-        this.logger.info(`正在連接至 ${this.config.host}:${this.config.port}...`);
+
+        const currentServer = this.serverList[this.currentServerIndex];
+        const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
+        this.logger.info(`[${serverTag}] 正在連接至 ${currentServer.host}:${currentServer.port}...`);
 
         const usernameForLogin = this.config.offline ? '.' + this.config.botTag : this.config.botTag;
         this.client = createClient({
-            host: this.config.host, port: this.config.port, version: this.config.version,
+            host: currentServer.host, port: currentServer.port, version: this.config.version,
             offline: this.config.offline, username: usernameForLogin,
             profilesFolder: this.config.profilePath, connectTimeout: 10000,
             followPort: false
@@ -120,6 +132,12 @@ class Bot {
         this.client.on('spawn', () => {
             this.state.status = 'ONLINE';
             this.logger.info('✅ 成功登入伺服器！');
+
+            if (this.currentServerIndex !== 0) {
+                this.logger.info('已連上備用伺服器，下次重連時將優先嘗試主要伺服器。');
+                this.currentServerIndex = 0;
+            }
+
             this.lastSuccessfulLoginTime = Date.now();
             if (this.consecutiveConnectionFails > 0) {
                 this.logger.info('連線成功，重置連續失敗計數器。');
@@ -214,6 +232,13 @@ class Bot {
         } else if (previousStatus === 'CONNECTING') {
             this.consecutiveConnectionFails++;
             this.logger.warn(`連線失敗，連續失敗次數: ${this.consecutiveConnectionFails}`);
+
+            if (this.serverList.length > 1) {
+                this.currentServerIndex = (this.currentServerIndex + 1) % this.serverList.length;
+                const nextServer = this.serverList[this.currentServerIndex];
+                const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
+                this.logger.info(`將切換到下一個 [${serverTag}] 伺服器: ${nextServer.host}:${nextServer.port}`);
+            }
         }
         this._scheduleReconnect();
     }

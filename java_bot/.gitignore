@@ -21,3 +21,6 @@ Thumbs.db
 
 # 作業系統特定檔案
 .DS_Store
+
+# Backup files
+*.bak

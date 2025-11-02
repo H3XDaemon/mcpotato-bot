@@ -11,6 +11,14 @@ class BotManager {
     }
 
     loadAccounts(accountsPath) {
+        const serversPath = path.join(path.dirname(accountsPath), 'servers.json');
+        if (!fs.existsSync(serversPath)) {
+            logger.error(`伺服器設定檔未找到: ${serversPath}`);
+            process.exit(1);
+        }
+        const servers = JSON.parse(fs.readFileSync(serversPath, 'utf-8'));
+        logger.info('已成功讀取伺服器設定檔。');
+
         if (!fs.existsSync(accountsPath)) {
             logger.error(`設定檔未找到: ${accountsPath}`);
             process.exit(1);
@@ -22,7 +30,25 @@ class BotManager {
                 logger.warn('發現沒有 botTag 的機器人設定，已略過。');
                 continue;
             }
-            const bot = new Bot(config, this.itemMapping);
+
+            const serverName = config.server;
+            const serverInfo = servers[serverName];
+
+            if (!serverInfo) {
+                logger.error(`[設定錯誤] 機器人 ${config.botTag} 指定的伺服器 '${serverName}' 在 servers.json 中找不到，已跳過。`);
+                continue;
+            }
+
+            const serverList = [serverInfo.primary, ...(serverInfo.backups || [])].filter(s => s && s.host && s.port);
+            if (serverList.length === 0) {
+                logger.error(`[設定錯誤] 伺服器 '${serverName}' 沒有設定任何有效的 primary 或 backup IP，已跳過機器人 ${config.botTag}。`);
+                continue;
+            }
+
+            // 將 serverList 注入到 bot 的設定中
+            const botConfig = { ...config, serverList };
+
+            const bot = new Bot(botConfig, this.itemMapping);
             this.bots.set(config.botTag, bot);
             this.botTagsByIndex.push(config.botTag);
         }

@@ -2,8 +2,7 @@
   {
     "enabled": true,
     "botTag": "OnlineBot_1",
-    "host": "proxy.mcpotato.xyz",
-    "port": 45632,
+    "server": "mcpotato_bedrock",
     "offline": false,
     "profilePath": "./profiles/online_bot1",
     "autoWithdraw": {
@@ -15,8 +14,7 @@
   {
     "enabled": true,
     "botTag": "OnlineBot_2",
-    "host": "proxy.mcpotato.xyz",
-    "port": 45632,
+    "server": "mcpotato_bedrock",
     "offline": false,
     "profilePath": "./profiles/online_bot2",
     "autoWithdraw": {
