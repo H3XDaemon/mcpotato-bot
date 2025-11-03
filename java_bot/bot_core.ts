@@ -243,6 +243,9 @@ class BotJava {
     tpsMonitor: TPSMonitor | null;
     ominousTrialKeyDrops: number;
     processedDropEntities: Set<number>;
+    expHistory: { time: number, points: number }[];
+    lastExpLogTime: number;
+    logExpRate: boolean;
     logger: any;
 
     constructor(botConfig: CustomBotOptions, serverList: { host: string, port: number }[]) {
@@ -314,6 +317,9 @@ class BotJava {
         this.ominousTrialKeyDrops = 0;
         // ++ 新增 ++ 用於追蹤已處理的掉落物實體，避免重複觸發
         this.processedDropEntities = new Set();
+        this.expHistory = [];
+        this.lastExpLogTime = 0;
+        this.logExpRate = true;
 
         this.logger = Object.fromEntries(
             Object.keys(logger).map(levelName => [
@@ -892,6 +898,36 @@ class BotJava {
         this.client.on('kicked', (reason: string, _loggedIn: boolean) => this._onDisconnected('kicked', reason));
         this.client.on('error', (err: Error) => this._onDisconnected('error', err));
         this.client.on('end', (reason: string) => this._onDisconnected('end', reason));
+
+        this.client.on('experience', () => {
+            if (!this.client || !this.logExpRate) return;
+            const WINDOW_SIZE = 60000; // 1分鐘窗口
+            const LOG_INTERVAL = 5000; // 5秒日誌間隔
+            const now = Date.now();
+            const currentPoints = this.client.experience.points;
+          
+            this.expHistory.push({ time: now, points: currentPoints });
+          
+            while (this.expHistory.length > 0 && now - this.expHistory[0].time > WINDOW_SIZE) {
+              this.expHistory.shift();
+            }
+          
+            if (this.expHistory.length >= 2 && (now - this.lastExpLogTime > LOG_INTERVAL)) {
+              const oldest = this.expHistory[0];
+              const newest = this.expHistory[this.expHistory.length - 1];
+          
+              const timeDiffMs = newest.time - oldest.time;
+              const pointsDiff = newest.points - oldest.points;
+          
+              if (timeDiffMs > 0) {
+                const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+                const expPerHour = pointsDiff / timeDiffHours;
+                
+                this.logger.info(`exp/h (滑動1分鐘窗口): ${expPerHour.toFixed(2)}`);
+                this.lastExpLogTime = now;
+              }
+            }
+        });
     }
 
     _onDisconnected(source: string, reason: string | Error) {
@@ -1105,6 +1141,25 @@ class BotJava {
         }
         this.logger.debug(`執行指令: ${command}`);
         this.client.chat(command);
+    }
+
+    displayExperience() {
+        if (this.state.status !== 'ONLINE' || !this.client) {
+            this.logger.warn('機器人離線，無法獲取經驗值資訊。');
+            return;
+        }
+        const exp = this.client.experience;
+        this.logger.info(`--- [經驗值資訊] ---
+` +
+            `  等級: ${exp.level}\n` +
+            `  總點數: ${exp.points}\n` +
+            `  進度: ${(exp.progress * 100).toFixed(2)}%\n` +
+            `--------------------`);
+    }
+
+    toggleExpLogging() {
+        this.logExpRate = !this.logExpRate;
+        this.logger.info(`經驗值/小時 日誌已 ${this.logExpRate ? '開啟' : '關閉'}。`);
     }
 }
 

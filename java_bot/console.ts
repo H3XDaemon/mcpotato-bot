@@ -315,6 +315,7 @@ ${Colors.FgCyan}======================================================${Colors.R
    dismount [@目標]     - 從坐騎上下來
    pos [@目標]          - 取得目前座標
    tps [@目標]          - 取得伺服器目前的 TPS (多種方法)
+   exp [toggle] [@目標] - 顯示經驗值資訊，或開關 exp/h 日誌
    test drop [@目標]    - 丟棄物品以測試 itemDrop 事件
    atm list [@目標]     - 列出虛擬銀行 (ATM) 內容物
    atm take <欄位> [@目標] - 從 ATM 拿取物品
@@ -488,6 +489,18 @@ ${Colors.FgCyan}======================================================${Colors.R
                     bot.logger.error(`取得 TPS 時發生錯誤: ${error.message}`);
                 }
             }
+        },
+        'exp': (args: string[]) => {
+            const { targets, cleanArgs } = parseCommandTargets(args);
+            const subCommand = cleanArgs[0]?.toLowerCase();
+
+            targets.forEach((bot: any) => {
+                if (subCommand === 'toggle') {
+                    bot.toggleExpLogging();
+                } else {
+                    bot.displayExperience();
+                }
+            });
         },
         'test': async (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
