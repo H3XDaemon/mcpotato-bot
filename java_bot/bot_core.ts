@@ -244,6 +244,8 @@ class BotJava {
     ominousTrialKeyDrops: number;
     processedDropEntities: Set<number>;
     expHistory: { time: number, points: number }[];
+    expSamplesHour: { time: number, points: number }[];
+    lastExpSampleTime: number;
     lastExpLogTime: number;
     logExpRate: boolean;
     logger: any;
@@ -318,6 +320,8 @@ class BotJava {
         // ++ 新增 ++ 用於追蹤已處理的掉落物實體，避免重複觸發
         this.processedDropEntities = new Set();
         this.expHistory = [];
+        this.expSamplesHour = [];
+        this.lastExpSampleTime = 0;
         this.lastExpLogTime = 0;
         this.logExpRate = true;
 
@@ -901,31 +905,43 @@ class BotJava {
 
         this.client.on('experience', () => {
             if (!this.client || !this.logExpRate) return;
-            const WINDOW_SIZE = 60000; // 1分鐘窗口
-            const LOG_INTERVAL = 5000; // 5秒日誌間隔
+            const MINUTE_WINDOW_SIZE = 60000;
+            const SAMPLE_INTERVAL = 60000; // 每分鐘取樣一次
+            const LOG_INTERVAL = 5000;
             const now = Date.now();
             const currentPoints = this.client.experience.points;
-          
+
+            // 更新一分鐘滑動窗口 (用於即時速率)
             this.expHistory.push({ time: now, points: currentPoints });
-          
-            while (this.expHistory.length > 0 && now - this.expHistory[0].time > WINDOW_SIZE) {
-              this.expHistory.shift();
+            while (this.expHistory.length > 0 && now - this.expHistory[0].time > MINUTE_WINDOW_SIZE) {
+                this.expHistory.shift();
             }
-          
+
+            // 每分鐘取樣一次 (用於長期統計)
+            if (now - this.lastExpSampleTime > SAMPLE_INTERVAL) {
+                this.lastExpSampleTime = now;
+                this.expSamplesHour.push({ time: now, points: currentPoints });
+                // 維持最多65個樣本 (約一小時多一點)
+                if (this.expSamplesHour.length > 65) {
+                    this.expSamplesHour.shift();
+                }
+            }
+
+            // 計算並記錄 exp/h (基於一分鐘窗口)
             if (this.expHistory.length >= 2 && (now - this.lastExpLogTime > LOG_INTERVAL)) {
-              const oldest = this.expHistory[0];
-              const newest = this.expHistory[this.expHistory.length - 1];
-          
-              const timeDiffMs = newest.time - oldest.time;
-              const pointsDiff = newest.points - oldest.points;
-          
-              if (timeDiffMs > 0) {
-                const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
-                const expPerHour = pointsDiff / timeDiffHours;
-                
-                this.logger.info(`exp/h (滑動1分鐘窗口): ${expPerHour.toFixed(2)}`);
-                this.lastExpLogTime = now;
-              }
+                const oldest = this.expHistory[0];
+                const newest = this.expHistory[this.expHistory.length - 1];
+
+                const timeDiffMs = newest.time - oldest.time;
+                const pointsDiff = newest.points - oldest.points;
+
+                if (timeDiffMs > 0) {
+                    const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+                    const expPerHour = pointsDiff / timeDiffHours;
+
+                    this.logger.info(`exp/h (滑動1分鐘窗口): ${expPerHour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                    this.lastExpLogTime = now;
+                }
             }
         });
     }
@@ -1149,11 +1165,31 @@ class BotJava {
             return;
         }
         const exp = this.client.experience;
-        this.logger.info(`--- [經驗值資訊] ---
-` +
-            `  等級: ${exp.level}\n` +
-            `  總點數: ${exp.points}\n` +
-            `  進度: ${(exp.progress * 100).toFixed(2)}%\n` +
+        let hourlyInfo = '數據不足，無法計算';
+        let durationStr = '00h 00m 00s';
+
+        if (this.expSamplesHour.length >= 1) { // 只需要一個樣本點作為起點
+            const oldest = this.expSamplesHour[0];
+            const newest = { time: Date.now(), points: this.client.experience.points }; // 當前狀態作為終點
+            const timeDiffMs = newest.time - oldest.time;
+
+            if (timeDiffMs > 0) {
+                const totalExpGained = newest.points - oldest.points;
+                const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+                const avgExpPerHour = totalExpGained / timeDiffHours;
+
+                const hours = Math.floor(timeDiffHours);
+                const minutes = Math.floor((timeDiffHours * 60) % 60);
+                const seconds = Math.floor((timeDiffHours * 3600) % 60);
+                durationStr = `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+
+                hourlyInfo = `總獲得: ${totalExpGained.toLocaleString()} / 平均: ${avgExpPerHour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} exp/h`;
+            }
+        }
+
+        this.logger.info(`--- [經驗值資訊] ---\n` +
+            `  當前狀態: 等級 ${exp.level} / 總點數 ${exp.points.toLocaleString()} / 進度 ${(exp.progress * 100).toFixed(2)}%\n` +
+            `  長期統計 (${durationStr}): ${hourlyInfo}\n` +
             `--------------------`);
     }
 
