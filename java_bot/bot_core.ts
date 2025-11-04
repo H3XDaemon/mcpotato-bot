@@ -306,6 +306,8 @@ class BotJava {
 
         this.reconnectAttempts = [];
         this.reconnectContext = 'NONE';
+        this.primaryFailTimestamp = null;
+        this.PRIMARY_SERVER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
         this.lastSuccessfulLoginTime = null;
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
@@ -625,9 +627,18 @@ class BotJava {
             const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
             this.logger.info(`✅ 成功登入到 [${serverTag}] 伺服器 ${connectedServer.host}:${connectedServer.port}，玩家名稱: ${this.client.username}`);
             
-            if (this.currentServerIndex !== 0) {
-                this.logger.info('已連上備用伺服器，下次重連時將優先嘗試主要伺服器。');
-                this.currentServerIndex = 0;
+            // If we successfully connected to the primary server, reset the fail timestamp.
+            if (this.currentServerIndex === 0) {
+                if (this.primaryFailTimestamp) {
+                    this.logger.info('主要伺服器已恢復穩定，清除備用伺服器冷卻計時。');
+                    this.primaryFailTimestamp = null;
+                }
+            } else {
+                // We are on the backup server, log the status.
+                if(this.primaryFailTimestamp){
+                    const timeToRetry = Math.round((this.PRIMARY_SERVER_COOLDOWN - (Date.now() - this.primaryFailTimestamp)) / 60000);
+                    this.logger.info(`已連上備用伺服器，${timeToRetry > 0 ? `約 ${timeToRetry} 分鐘` : '在下次斷線後'}將重試主要伺服器。`);
+                }
             }
 
             this.lastSuccessfulLoginTime = Date.now();
@@ -1050,19 +1061,15 @@ class BotJava {
 
         this.state.status = 'OFFLINE';
         
-        // ======================= RECONNECT LOGIC FIX START =======================
         if (wasOnline) {
             const QUICK_DISCONNECT_WINDOW = 60 * 1000;
-            // Handle case where lastSuccessfulLoginTime might be null, though unlikely if wasOnline is true
             const timeSinceLogin = this.lastSuccessfulLoginTime ? Date.now() - this.lastSuccessfulLoginTime : QUICK_DISCONNECT_WINDOW;
 
             if (timeSinceLogin < QUICK_DISCONNECT_WINDOW) {
-                // This was a quick disconnect. Treat it like a connection failure for backoff purposes.
                 this.quickDisconnectCount++;
-                this.consecutiveConnectionFails++; // KEY CHANGE: Increment instead of resetting
+                this.consecutiveConnectionFails++;
                 this.logger.warn(`偵測到快速斷線 (登入後 ${(timeSinceLogin / 1000).toFixed(1)} 秒)，快速斷線計數: ${this.quickDisconnectCount}，連續失敗計數: ${this.consecutiveConnectionFails}`);
             } else {
-                // Connection was stable, so this is a fresh disconnect event. Reset counters.
                 if (this.quickDisconnectCount > 0) {
                     this.logger.info('連線穩定超過一分鐘，重置快速斷線計數器。');
                     this.quickDisconnectCount = 0;
@@ -1073,18 +1080,33 @@ class BotJava {
                 }
             }
         } else if (wasConnecting) {
-            // This was a failure during the connection process.
             this.consecutiveConnectionFails++;
             this.logger.warn(`連線失敗，連續失敗次數: ${this.consecutiveConnectionFails}`);
 
             if (this.serverList.length > 1) {
-                this.currentServerIndex = (this.currentServerIndex + 1) % this.serverList.length;
+                // If we failed to connect to the PRIMARY server
+                if (this.currentServerIndex === 0) {
+                    this.logger.warn('主要伺服器連線失敗，開始 10 分鐘冷卻計時並切換到備用伺服器。');
+                    this.primaryFailTimestamp = Date.now();
+                    this.currentServerIndex = 1; // Switch to backup
+                }
+                // If we failed to connect to the BACKUP server
+                else {
+                    // Check if the cooldown has passed
+                    if (this.primaryFailTimestamp && (Date.now() - this.primaryFailTimestamp > this.PRIMARY_SERVER_COOLDOWN)) {
+                        this.logger.info('備用伺服器連線失敗，但冷卻時間已過，將嘗試切換回主要伺服器。');
+                        this.currentServerIndex = 0; // Switch back to primary
+                        this.primaryFailTimestamp = null; // Reset timestamp
+                    } else {
+                        this.logger.warn('備用伺服器連線失敗，冷卻中，將繼續重試備用伺服器。');
+                        // Do nothing, currentServerIndex remains on the backup
+                    }
+                }
                 const nextServer = this.serverList[this.currentServerIndex];
                 const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
-                this.logger.info(`將切換到下一個 [${serverTag}] 伺服器: ${nextServer.host}:${nextServer.port}`);
+                this.logger.info(`下一次將嘗試連線到 [${serverTag}] 伺服器: ${nextServer.host}:${nextServer.port}`);
             }
         }
-        // ======================= RECONNECT LOGIC FIX END =========================
 
         if (this.state.status !== 'STOPPED') {
             this._scheduleReconnect({ isNetworkError });
