@@ -1,8 +1,7 @@
 {
   "mcpotato_main": {
-    "primary": { "host": "mc2.mcpotato.xyz", "port": 25565 },
+    "primary": { "host": "mcpotato.xyz", "port": 25565 },
     "backups": [
-      { "host": "mcpotato.xyz", "port": 25565 },
       { "host": "mc.mcpotato.xyz", "port": 25565 },
       { "host": "proxy.mcpotato.xyz", "port": 45632 }
     ]

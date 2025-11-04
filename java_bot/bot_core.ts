@@ -323,7 +323,7 @@ class BotJava {
         this.expSamplesHour = [];
         this.lastExpSampleTime = 0;
         this.lastExpLogTime = 0;
-        this.logExpRate = true;
+        this.logExpRate = false;
 
         this.logger = Object.fromEntries(
             Object.keys(logger).map(levelName => [
