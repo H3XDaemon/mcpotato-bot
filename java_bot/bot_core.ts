@@ -234,6 +234,8 @@ class BotJava {
     reconnectContext: string;
     serverList: { host: string, port: number }[];
     currentServerIndex: number;
+    primaryFailTimestamp: number | null;
+    PRIMARY_SERVER_COOLDOWN: number;
     lastSuccessfulLoginTime: number | null;
     quickDisconnectCount: number;
     consecutiveConnectionFails: number;
