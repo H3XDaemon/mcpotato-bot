@@ -10,7 +10,7 @@
     "startWorkOnLogin": false,
     "reconnectOnDuplicateLogin": {
       "enabled": true,
-      "delayMinutes": 180
+      "delayMinutes": 60
     }
   },
   {
