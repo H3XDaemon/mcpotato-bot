@@ -1006,7 +1006,7 @@ class BotJava {
         }
 
         const cleanMessageText = reasonText.replace(/§[0-9a-fk-or]/g, '');
-        if (cleanMessageText.includes('logged_in_elsewhere') || cleanMessageText.includes('duplicate_login')) {
+        if (cleanMessageText.includes('logged_in_elsewhere') || cleanMessageText.includes('duplicate_login') || cleanMessageText.includes('already connected to this proxy')) {
             isLoginElsewhere = true;
         }
 
