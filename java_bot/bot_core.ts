@@ -913,7 +913,13 @@ class BotJava {
         });
 
         this.client.on('kicked', (reason: string, _loggedIn: boolean) => this._onDisconnected('kicked', reason));
-        this.client.on('error', (err: Error) => this._onDisconnected('error', err));
+
+        // Non-fatal errors are logged here, but do not trigger a disconnect.
+        // The 'end' event will handle the actual disconnection if it occurs.
+        this.client.on('error', (err: Error) => {
+            this.logger.error(`客戶端錯誤: ${err.message}`);
+        });
+
         this.client.on('end', (reason: string) => this._onDisconnected('end', reason));
 
         this.client.on('experience', () => {
