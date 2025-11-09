@@ -48,7 +48,10 @@ const consoleFormat = winston.format.printf(({ level, message, timestamp, botTag
 const logger = winston.createLogger({
     level: process.env.DEBUG ? 'debug' : 'info',
     format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format(info => {
+            info.timestamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).substring(0, 19);
+            return info;
+        })(),
         winston.format.errors({ stack: true }),
         winston.format.splat()
     ),
