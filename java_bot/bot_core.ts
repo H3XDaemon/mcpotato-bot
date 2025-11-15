@@ -5,6 +5,7 @@ import * as util from 'util';
 import { ChatMessage } from 'prismarine-chat';
 import mineflayer, { BotOptions } from 'mineflayer';
 import tpsPlugin from 'mineflayer-tps';
+import tcpp from 'tcp-ping';
 
 interface CustomBotOptions extends BotOptions {
     botTag: string;
@@ -29,11 +30,11 @@ interface CustomBotOptions extends BotOptions {
 // 1. UTILITIES (工具函式庫)
 // =================================================================================
 
-const Colors = {
+export const Colors = {
     Reset: "\x1b[0m", FgGreen: "\x1b[32m", FgRed: "\x1b[31m", FgYellow: "\x1b[33m", FgCyan: "\x1b[36m", FgMagenta: "\x1b[35m"
 };
 
-const logger = (() => {
+export const logger = (() => {
     let rlInterface: readline.Interface | null = null;
     let activeBotForLogging: any = null;
     const LogLevel: { [key: string]: number } = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, CHAT: 4 };
@@ -82,7 +83,7 @@ const logger = (() => {
     };
 })();
 
-function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
+export function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 class TPSMonitor {
     bot: any;
@@ -217,7 +218,7 @@ import { GuiManager } from './src/gui.js';
 
 import { TaskManager } from './src/taskManager.js';
 
-class BotJava {
+export class BotJava {
     taskManager: TaskManager | null;
     config: any;
     gui: GuiManager | null;
@@ -234,8 +235,11 @@ class BotJava {
     reconnectContext: string;
     serverList: { host: string, port: number }[];
     currentServerIndex: number;
-    primaryFailTimestamp: number | null;
-    PRIMARY_SERVER_COOLDOWN: number;
+    ipBlacklist: Map<string, number>;
+    BLACKLIST_COOLDOWN: number;
+    failbackCheckInterval: NodeJS.Timeout | null;
+    FAILBACK_CHECK_PERIOD: number;
+    isCheckingFailback: boolean;
     lastSuccessfulLoginTime: number | null;
     quickDisconnectCount: number;
     consecutiveConnectionFails: number;
@@ -308,8 +312,11 @@ class BotJava {
 
         this.reconnectAttempts = [];
         this.reconnectContext = 'NONE';
-        this.primaryFailTimestamp = null;
-        this.PRIMARY_SERVER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
+        this.ipBlacklist = new Map();
+        this.BLACKLIST_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+        this.failbackCheckInterval = null;
+        this.FAILBACK_CHECK_PERIOD = 5 * 60 * 1000; // 5 minutes
+        this.isCheckingFailback = false;
         this.lastSuccessfulLoginTime = null;
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
@@ -357,6 +364,13 @@ class BotJava {
         this.reconnectContext = 'NONE';
         this.isDisconnecting = false;
         this.state.status = 'CONNECTING';
+
+        if (this.serverList.length === 0) {
+            this.logger.error('沒有可用的伺服器設定，無法連線。');
+            this.state.status = 'STOPPED';
+            return;
+        }
+
         const currentServer = this.serverList[this.currentServerIndex];
         const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
         this.logger.info(`[${serverTag}] 正在連接至 ${currentServer.host}:${currentServer.port}...`);
@@ -430,6 +444,10 @@ class BotJava {
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
+        }
+        if (this.failbackCheckInterval) {
+            clearInterval(this.failbackCheckInterval);
+            this.failbackCheckInterval = null;
         }
         if (this.isWorking) {
             this.stopWork('手動斷開連線');
@@ -629,18 +647,18 @@ class BotJava {
             const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
             this.logger.info(`✅ 成功登入到 [${serverTag}] 伺服器 ${connectedServer.host}:${connectedServer.port}，玩家名稱: ${this.client.username}`);
             
-            // If we successfully connected to the primary server, reset the fail timestamp.
-            if (this.currentServerIndex === 0) {
-                if (this.primaryFailTimestamp) {
-                    this.logger.info('主要伺服器已恢復穩定，清除備用伺服器冷卻計時。');
-                    this.primaryFailTimestamp = null;
-                }
-            } else {
-                // We are on the backup server, log the status.
-                if(this.primaryFailTimestamp){
-                    const timeToRetry = Math.round((this.PRIMARY_SERVER_COOLDOWN - (Date.now() - this.primaryFailTimestamp)) / 60000);
-                    this.logger.info(`已連上備用伺服器，${timeToRetry > 0 ? `約 ${timeToRetry} 分鐘` : '在下次斷線後'}將重試主要伺服器。`);
-                }
+            // ++ 新增 ++ 成功連線後，從黑名單中移除
+            const serverIdentifier = `${connectedServer.host}:${connectedServer.port}`;
+            if (this.ipBlacklist.has(serverIdentifier)) {
+                this.ipBlacklist.delete(serverIdentifier);
+                this.logger.info(`已將 ${serverIdentifier} 從連線黑名單中移除。`);
+            }
+
+            // ++ 新增 ++ 主動回歸機制
+            if (this.currentServerIndex > 0) {
+                this.logger.info(`已連上備用伺服器，將在 ${this.FAILBACK_CHECK_PERIOD / 1000 / 60} 分鐘後開始檢查主要伺服器狀態...`);
+                if (this.failbackCheckInterval) clearInterval(this.failbackCheckInterval);
+                this.failbackCheckInterval = setInterval(() => this._checkForFailback(), this.FAILBACK_CHECK_PERIOD);
             }
 
             this.lastSuccessfulLoginTime = Date.now();
@@ -971,6 +989,12 @@ class BotJava {
         }
         this.isDisconnecting = true;
 
+        if (this.failbackCheckInterval) {
+            clearInterval(this.failbackCheckInterval);
+            this.failbackCheckInterval = null;
+            this.logger.info('主動回歸檢查計時器已清除。');
+        }
+
         // --- [NEW] Anti-AFK Cleanup ---
         if (this.antiAfkInterval) {
             clearInterval(this.antiAfkInterval);
@@ -1092,32 +1116,126 @@ class BotJava {
             this.logger.warn(`連線失敗，連續失敗次數: ${this.consecutiveConnectionFails}`);
 
             if (this.serverList.length > 1) {
-                // If we failed to connect to the PRIMARY server
-                if (this.currentServerIndex === 0) {
-                    this.logger.warn('主要伺服器連線失敗，開始 10 分鐘冷卻計時並切換到備用伺服器。');
-                    this.primaryFailTimestamp = Date.now();
-                    this.currentServerIndex = 1; // Switch to backup
+                // ++ 重構 ++ 使用新的輪詢和黑名單機制
+                const failedServer = this.serverList[this.currentServerIndex];
+                const serverIdentifier = `${failedServer.host}:${failedServer.port}`;
+                this.logger.warn(`將 ${serverIdentifier} 加入黑名單 ${this.BLACKLIST_COOLDOWN / 1000 / 60} 分鐘。`);
+                this.ipBlacklist.set(serverIdentifier, Date.now() + this.BLACKLIST_COOLDOWN);
+
+                if (!this._selectNextServer()) {
+                    this.logger.error('所有伺服器均在黑名單中！將等待最短黑名單時間後重試。');
+                    // The reconnect scheduler will handle the delay.
                 }
-                // If we failed to connect to the BACKUP server
-                else {
-                    // Check if the cooldown has passed
-                    if (this.primaryFailTimestamp && (Date.now() - this.primaryFailTimestamp > this.PRIMARY_SERVER_COOLDOWN)) {
-                        this.logger.info('備用伺服器連線失敗，但冷卻時間已過，將嘗試切換回主要伺服器。');
-                        this.currentServerIndex = 0; // Switch back to primary
-                        this.primaryFailTimestamp = null; // Reset timestamp
-                    } else {
-                        this.logger.warn('備用伺服器連線失敗，冷卻中，將繼續重試備用伺服器。');
-                        // Do nothing, currentServerIndex remains on the backup
-                    }
-                }
-                const nextServer = this.serverList[this.currentServerIndex];
-                const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
-                this.logger.info(`下一次將嘗試連線到 [${serverTag}] 伺服器: ${nextServer.host}:${nextServer.port}`);
             }
         }
 
         if (this.state.status !== 'STOPPED') {
             this._scheduleReconnect({ isNetworkError });
+        }
+    }
+
+    /**
+     * ++ 新增 ++
+     * 根據黑名單選擇下一個可用的伺服器。
+     * @returns {boolean} - 如果找到下一個可用的伺服器則返回 true，否則返回 false。
+     */
+    _selectNextServer(): boolean {
+        if (this.serverList.length === 0) {
+            this.logger.error('伺服器列表為空，無法選擇伺服器。');
+            return false;
+        }
+        if (this.serverList.length === 1) {
+            this.logger.info('只有一個伺服器，無需切換。');
+            const serverIdentifier = `${this.serverList[0].host}:${this.serverList[0].port}`;
+            const blacklistedUntil = this.ipBlacklist.get(serverIdentifier);
+            if (blacklistedUntil && Date.now() < blacklistedUntil) {
+                this.logger.warn(`唯一伺服器 ${serverIdentifier} 仍在黑名單中，將等待。`);
+                return false;
+            }
+            return true;
+        }
+
+        const now = Date.now();
+        let earliestBlacklistExpiry = Infinity;
+        let bestCandidateIndex = -1;
+
+        // 嘗試找到一個非黑名單的伺服器
+        for (let i = 1; i <= this.serverList.length; i++) {
+            const checkIndex = (this.currentServerIndex + i) % this.serverList.length;
+            const server = this.serverList[checkIndex];
+            const serverIdentifier = `${server.host}:${server.port}`;
+            const blacklistedUntil = this.ipBlacklist.get(serverIdentifier);
+
+            if (!blacklistedUntil || now > blacklistedUntil) {
+                // 找到一個非黑名單的伺服器
+                if (blacklistedUntil) {
+                    this.ipBlacklist.delete(serverIdentifier); // 從黑名單中移除過期項目
+                }
+                this.currentServerIndex = checkIndex;
+                const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
+                this.logger.info(`已切換到下一個可用伺服器: [${serverTag}] ${serverIdentifier}`);
+                return true;
+            } else {
+                // 記錄黑名單最快過期的伺服器
+                if (blacklistedUntil < earliestBlacklistExpiry) {
+                    earliestBlacklistExpiry = blacklistedUntil;
+                    bestCandidateIndex = checkIndex;
+                }
+            }
+        }
+
+        // 如果所有伺服器都在黑名單中，則選擇黑名單最快過期的伺服器
+        if (bestCandidateIndex !== -1) {
+            this.currentServerIndex = bestCandidateIndex;
+            const server = this.serverList[bestCandidateIndex];
+            const serverIdentifier = `${server.host}:${server.port}`;
+            const timeLeft = Math.ceil((earliestBlacklistExpiry - now) / 1000);
+            this.logger.warn(`所有伺服器均在黑名單中。已選擇黑名單最快過期的伺服器 [${serverIdentifier}]，預計 ${timeLeft} 秒後可嘗試。`);
+            return false;
+        }
+
+        // 理論上不應該到達這裡，除非 serverList 為空或邏輯錯誤
+        this.logger.error('無法選擇下一個伺服器，伺服器列表可能存在問題。');
+        return false;
+    }
+
+    /**
+     * ++ 新增 ++
+     * 當連線在備用伺服器時，定期檢查主要伺服器是否恢復。
+     */
+    async _checkForFailback() {
+        if (this.currentServerIndex === 0 || this.serverList.length <= 1 || this.isCheckingFailback || this.state.status !== 'ONLINE') {
+            return;
+        }
+
+        this.isCheckingFailback = true;
+        this.logger.info('[主動回歸] 正在檢查主要伺服器狀態...');
+
+        const primaryServer = this.serverList[0];
+        const ping = util.promisify(tcpp.ping);
+
+        try {
+            const result = await ping({ address: primaryServer.host, port: primaryServer.port, attempts: 1 });
+            if (result && result.avg) {
+                this.logger.info(`[主動回歸] 主要伺服器 ${primaryServer.host}:${primaryServer.port} 已恢復連線 (延遲: ${result.avg.toFixed(2)}ms)。`);
+                this.logger.info('[主動回歸] 準備切換回主要伺服器...');
+                
+                // 清除計時器，因為即將斷線
+                if (this.failbackCheckInterval) {
+                   clearInterval(this.failbackCheckInterval);
+                   this.failbackCheckInterval = null;
+                }
+
+                // 設定回主要伺服器並觸發重連
+                this.currentServerIndex = 0;
+                this.disconnect('切換回主要伺服器');
+            } else {
+                this.logger.info('[主動回歸] 主要伺服器目前仍無法連線。');
+            }
+        } catch (err: any) {
+            this.logger.warn(`[主動回歸] 檢查主要伺服器時發生錯誤: ${err.message}`);
+        } finally {
+            this.isCheckingFailback = false;
         }
     }
 
@@ -1128,15 +1246,16 @@ class BotJava {
 
         const { isNetworkError = false } = context;
 
-        const BASE_DELAY = 15 * 1000;
-        const MAX_BACKOFF_DELAY = 120 * 1000;
+        // ++ 新增 ++ 更積極的重連策略
+        const AGGRESSIVE_DELAYS = [5000, 10000, 15000, 30000, 60000]; // 5s, 10s, 15s, 30s, 60s
+
         const QUICK_DISCONNECT_COOLDOWN = 5 * 60 * 1000;
         const SUSPENSION_DELAY = 15 * 60 * 1000;
         const LONG_TERM_WINDOW = 30 * 60 * 1000;
         const MAX_LONG_TERM_ATTEMPTS = 10;
         const MAX_QUICK_DISCONNECTS = 3;
 
-        let delay = BASE_DELAY;
+        let delay: number;
         let reason = '';
         const now = Date.now();
 
@@ -1161,14 +1280,17 @@ class BotJava {
             this.quickDisconnectCount = 0;
         }
         else if (this.consecutiveConnectionFails > 0) {
-            delay = Math.min(BASE_DELAY * Math.pow(2, this.consecutiveConnectionFails - 1), MAX_BACKOFF_DELAY);
-            reason = `[指數退避] 連線失敗，將在 ${delay / 1000} 秒後重試...`;
+            const failIndex = this.consecutiveConnectionFails - 1;
+            delay = AGGRESSIVE_DELAYS[Math.min(failIndex, AGGRESSIVE_DELAYS.length - 1)];
+            reason = `[積極重連] 連線失敗第 ${this.consecutiveConnectionFails} 次，將在 ${delay / 1000} 秒後重試...`;
             this.logger.warn(reason);
         }
         else {
+            delay = AGGRESSIVE_DELAYS[0]; // 對於一般斷線，預設為 5 秒
             reason = `準備在 ${delay / 1000} 秒後重連...`;
             this.logger.info(reason);
         }
+        
         this.reconnectAttempts.push(Date.now());
         this.reconnectTimeout = setTimeout(() => {
             this.reconnectTimeout = null;
@@ -1200,7 +1322,7 @@ class BotJava {
 
         if (this.expSamplesHour.length >= 1) { // 只需要一個樣本點作為起點
             const oldest = this.expSamplesHour[0];
-            const newest = { time: Date.now(), points: this.client.experience.points }; // 當前狀態作為終點
+            const newest = { time: Date.now(), points: this.client.experience.points }; // 當前狀態作為終点
             const timeDiffMs = newest.time - oldest.time;
 
             if (timeDiffMs > 0) {
@@ -1228,5 +1350,3 @@ class BotJava {
         this.logger.info(`經驗值/小時 日誌已 ${this.logExpRate ? '開啟' : '關閉'}。`);
     }
 }
-
-export { BotJava, TPSMonitor, logger, sleep, Colors };

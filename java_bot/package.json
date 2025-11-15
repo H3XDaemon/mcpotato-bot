@@ -19,9 +19,11 @@
   "license": "ISC",
   "dependencies": {
     "@types/node": "^20.0.0",
+    "@types/tcp-ping": "^0.1.6",
     "cross-env": "^10.1.0",
     "mineflayer": "^4.0.0",
-    "mineflayer-tps": "^1.0.1"
+    "mineflayer-tps": "^1.0.1",
+    "tcp-ping": "^0.1.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
