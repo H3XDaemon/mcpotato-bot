@@ -5,7 +5,6 @@ import * as util from 'util';
 import { ChatMessage } from 'prismarine-chat';
 import mineflayer, { BotOptions } from 'mineflayer';
 import tpsPlugin from 'mineflayer-tps';
-import tcpp from 'tcp-ping';
 
 interface CustomBotOptions extends BotOptions {
     botTag: string;
@@ -237,9 +236,6 @@ export class BotJava {
     currentServerIndex: number;
     ipBlacklist: Map<string, number>;
     BLACKLIST_COOLDOWN: number;
-    failbackCheckInterval: NodeJS.Timeout | null;
-    FAILBACK_CHECK_PERIOD: number;
-    isCheckingFailback: boolean;
     lastSuccessfulLoginTime: number | null;
     quickDisconnectCount: number;
     consecutiveConnectionFails: number;
@@ -314,9 +310,6 @@ export class BotJava {
         this.reconnectContext = 'NONE';
         this.ipBlacklist = new Map();
         this.BLACKLIST_COOLDOWN = 5 * 60 * 1000; // 5 minutes
-        this.failbackCheckInterval = null;
-        this.FAILBACK_CHECK_PERIOD = 5 * 60 * 1000; // 5 minutes
-        this.isCheckingFailback = false;
         this.lastSuccessfulLoginTime = null;
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
@@ -444,10 +437,6 @@ export class BotJava {
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
-        }
-        if (this.failbackCheckInterval) {
-            clearInterval(this.failbackCheckInterval);
-            this.failbackCheckInterval = null;
         }
         if (this.isWorking) {
             this.stopWork('手動斷開連線');
@@ -654,12 +643,7 @@ export class BotJava {
                 this.logger.info(`已將 ${serverIdentifier} 從連線黑名單中移除。`);
             }
 
-            // ++ 新增 ++ 主動回歸機制
-            if (this.currentServerIndex > 0) {
-                this.logger.info(`已連上備用伺服器，將在 ${this.FAILBACK_CHECK_PERIOD / 1000 / 60} 分鐘後開始檢查主要伺服器狀態...`);
-                if (this.failbackCheckInterval) clearInterval(this.failbackCheckInterval);
-                this.failbackCheckInterval = setInterval(() => this._checkForFailback(), this.FAILBACK_CHECK_PERIOD);
-            }
+
 
             this.lastSuccessfulLoginTime = Date.now();
             this.consecutiveConnectionFails = 0;
@@ -673,42 +657,65 @@ export class BotJava {
             if (this.config.antiAfk.enabled) {
                 if (this.antiAfkInterval) clearInterval(this.antiAfkInterval);
                 this.antiAfkInterval = setInterval(async () => {
-                    if (!this.client || this.isGuiBusy) {
-                        if (this.isGuiBusy) this.logger.info('[Anti-AFK] 偵測到介面正在使用中，跳過本次操作。');
+                    if (this.state.status !== 'ONLINE' || !this.client || this.isGuiBusy) {
+                        if (this.isGuiBusy) {
+                            this.logger.info('[Anti-AFK] 偵測到介面正在使用中，跳過本次操作。');
+                        } else if (this.state.status !== 'ONLINE') {
+                            this.logger.warn(`[Anti-AFK] 跳過操作，因為機器人狀態為 ${this.state.status} 而非 ONLINE。`);
+                        }
                         return;
                     }
             
                     this.isGuiBusy = true;
                     this.logger.info('[Anti-AFK] 執行開啟並關閉 /ah 來重置計時器...');
                     try {
-                        this.client.chat('/ah');
-                        const window: any = await new Promise((resolve, reject) => {
-                            const timer = setTimeout(() => {
-                                if (this.client) this.client.removeListener('windowOpen', onWindowOpen);
-                                reject(new Error('等待 /ah 視窗開啟超時 (10秒)'));
-                            }, 10000);
-                    
-                            const onWindowOpen = (win: any) => {
-                                clearTimeout(timer);
-                                if (this.client) this.client.removeListener('windowOpen', onWindowOpen);
-                                resolve(win);
-                            };
-                    
-                            if (this.client) {
-                                this.client.on('windowOpen', onWindowOpen);
-                            } else {
-                                clearTimeout(timer);
-                                reject(new Error('客戶端在等待視窗時斷線'));
-                            }
-                        });
+                        // 使用 Promise.race 來處理多種可能的回應
+                        const raceResult: any = await Promise.race([
+                            new Promise((resolve) => {
+                                if (!this.client) return resolve({ event: 'disconnect' });
+                                this.client.once('windowOpen', (win) => resolve({ event: 'windowOpen', window: win }));
+                            }),
+                            new Promise((resolve) => {
+                                if (!this.client) return resolve({ event: 'disconnect' });
+                                const keywords = ['錯誤', '等待', '冷卻', 'error', 'wait', 'cooldown'];
+                                const onMessage = (jsonMsg: ChatMessage) => {
+                                    const text = jsonMsg.toString().toLowerCase();
+                                    if (keywords.some(k => text.includes(k))) {
+                                        // 移除監聽器以避免記憶體洩漏
+                                        if (this.client) this.client.removeListener('message', onMessage);
+                                        resolve({ event: 'chatError', message: jsonMsg.toAnsi() });
+                                    }
+                                };
+                                this.client.on('message', onMessage);
+                            }),
+                            new Promise((resolve) => {
+                                setTimeout(() => resolve({ event: 'timeout' }), 10000);
+                            })
+                        ]);
 
-                        await sleep(1000); // Wait a second before closing
-                        window.close();
-                        this.logger.info('[Anti-AFK] /ah 介面已成功關閉。');
+                        // 根據 race 的結果進行處理
+                        switch (raceResult.event) {
+                            case 'windowOpen':
+                                this.logger.info('[Anti-AFK] /ah 視窗已成功開啟。');
+                                await sleep(1000); // Wait a second before closing
+                                raceResult.window.close();
+                                this.logger.info('[Anti-AFK] /ah 介面已成功關閉。');
+                                break;
+                            case 'chatError':
+                                throw new Error(`伺服器返回了可能的錯誤訊息: ${raceResult.message}`);
+                            case 'timeout':
+                                throw new Error('等待 /ah 視窗開啟或錯誤訊息超時 (10秒)');
+                            case 'disconnect':
+                                throw new Error('客戶端在等待視窗時斷線');
+                            default:
+                                throw new Error('未知的 Anti-AFK 競態結果');
+                        }
+
                     } catch (err: any) {
                         this.logger.error(`[Anti-AFK] 操作失敗: ${err.message}`);
                         // If an error occurs, it's possible a window is stuck open.
-                        if (this.client.currentWindow) {
+                        if (this.client && this.client.currentWindow) {
+                            this.logger.warn('[Anti-AFK] 嘗試關閉可能殘留的視窗...');
                             try { this.client.closeWindow(this.client.currentWindow); } catch {}
                         }
                     } finally {
@@ -989,12 +996,6 @@ export class BotJava {
         }
         this.isDisconnecting = true;
 
-        if (this.failbackCheckInterval) {
-            clearInterval(this.failbackCheckInterval);
-            this.failbackCheckInterval = null;
-            this.logger.info('主動回歸檢查計時器已清除。');
-        }
-
         // --- [NEW] Anti-AFK Cleanup ---
         if (this.antiAfkInterval) {
             clearInterval(this.antiAfkInterval);
@@ -1199,45 +1200,7 @@ export class BotJava {
         return false;
     }
 
-    /**
-     * ++ 新增 ++
-     * 當連線在備用伺服器時，定期檢查主要伺服器是否恢復。
-     */
-    async _checkForFailback() {
-        if (this.currentServerIndex === 0 || this.serverList.length <= 1 || this.isCheckingFailback || this.state.status !== 'ONLINE') {
-            return;
-        }
 
-        this.isCheckingFailback = true;
-        this.logger.info('[主動回歸] 正在檢查主要伺服器狀態...');
-
-        const primaryServer = this.serverList[0];
-        const ping = util.promisify(tcpp.ping);
-
-        try {
-            const result = await ping({ address: primaryServer.host, port: primaryServer.port, attempts: 1 });
-            if (result && result.avg) {
-                this.logger.info(`[主動回歸] 主要伺服器 ${primaryServer.host}:${primaryServer.port} 已恢復連線 (延遲: ${result.avg.toFixed(2)}ms)。`);
-                this.logger.info('[主動回歸] 準備切換回主要伺服器...');
-                
-                // 清除計時器，因為即將斷線
-                if (this.failbackCheckInterval) {
-                   clearInterval(this.failbackCheckInterval);
-                   this.failbackCheckInterval = null;
-                }
-
-                // 設定回主要伺服器並觸發重連
-                this.currentServerIndex = 0;
-                this.disconnect('切換回主要伺服器');
-            } else {
-                this.logger.info('[主動回歸] 主要伺服器目前仍無法連線。');
-            }
-        } catch (err: any) {
-            this.logger.warn(`[主動回歸] 檢查主要伺服器時發生錯誤: ${err.message}`);
-        } finally {
-            this.isCheckingFailback = false;
-        }
-    }
 
     _scheduleReconnect(context: { isNetworkError?: boolean } = {}) {
         if (this.reconnectTimeout || !this.config.enabled) {
