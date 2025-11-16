@@ -668,26 +668,43 @@ export class BotJava {
             
                     this.isGuiBusy = true;
                     this.logger.info('[Anti-AFK] 執行開啟並關閉 /ah 來重置計時器...');
+                    const currentClient = this.client; // Capture the client instance at this moment.
+
                     try {
                         // 使用 Promise.race 來處理多種可能的回應
                         const raceResult: any = await Promise.race([
+                            // 1. 成功開啟視窗
                             new Promise((resolve) => {
-                                if (!this.client) return resolve({ event: 'disconnect' });
-                                this.client.once('windowOpen', (win) => resolve({ event: 'windowOpen', window: win }));
+                                const onWindowOpen = (win: any) => {
+                                    currentClient.removeListener('end', onEnd);
+                                    resolve({ event: 'windowOpen', window: win });
+                                };
+                                const onEnd = () => {
+                                    currentClient.removeListener('windowOpen', onWindowOpen);
+                                    resolve({ event: 'disconnect' });
+                                };
+                                currentClient.once('windowOpen', onWindowOpen);
+                                currentClient.once('end', onEnd);
                             }),
+                            // 2. 收到錯誤訊息
                             new Promise((resolve) => {
-                                if (!this.client) return resolve({ event: 'disconnect' });
                                 const keywords = ['錯誤', '等待', '冷卻', 'error', 'wait', 'cooldown'];
                                 const onMessage = (jsonMsg: ChatMessage) => {
                                     const text = jsonMsg.toString().toLowerCase();
                                     if (keywords.some(k => text.includes(k))) {
-                                        // 移除監聽器以避免記憶體洩漏
-                                        if (this.client) this.client.removeListener('message', onMessage);
+                                        currentClient.removeListener('end', onEnd);
+                                        currentClient.removeListener('message', onMessage);
                                         resolve({ event: 'chatError', message: jsonMsg.toAnsi() });
                                     }
                                 };
-                                this.client.on('message', onMessage);
+                                const onEnd = () => {
+                                    currentClient.removeListener('message', onMessage);
+                                    resolve({ event: 'disconnect' });
+                                };
+                                currentClient.on('message', onMessage);
+                                currentClient.once('end', onEnd);
                             }),
+                            // 3. 超時
                             new Promise((resolve) => {
                                 setTimeout(() => resolve({ event: 'timeout' }), 10000);
                             })
@@ -706,7 +723,8 @@ export class BotJava {
                             case 'timeout':
                                 throw new Error('等待 /ah 視窗開啟或錯誤訊息超時 (10秒)');
                             case 'disconnect':
-                                throw new Error('客戶端在等待視窗時斷線');
+                                this.logger.warn('[Anti-AFK] 操作在執行中斷線，已取消。');
+                                break;
                             default:
                                 throw new Error('未知的 Anti-AFK 競態結果');
                         }
@@ -714,9 +732,9 @@ export class BotJava {
                     } catch (err: any) {
                         this.logger.error(`[Anti-AFK] 操作失敗: ${err.message}`);
                         // If an error occurs, it's possible a window is stuck open.
-                        if (this.client && this.client.currentWindow) {
+                        if (currentClient && currentClient.currentWindow) {
                             this.logger.warn('[Anti-AFK] 嘗試關閉可能殘留的視窗...');
-                            try { this.client.closeWindow(this.client.currentWindow); } catch {}
+                            try { currentClient.closeWindow(currentClient.currentWindow); } catch {}
                         }
                     } finally {
                         this.isGuiBusy = false;
