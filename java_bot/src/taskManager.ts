@@ -1,5 +1,5 @@
 
-import { BotJava } from '../bot_core.js';
+import { BotJava } from './bot.js';
 import { BotTask } from './task.js';
 
 interface ActiveTask {

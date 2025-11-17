@@ -1,5 +1,201 @@
-import { logger, sleep } from './utils';
+import { logger, sleep, Colors } from './utils';
 import { BotJava } from './bot'; // Import BotJava for type hinting
+import * as readline from 'readline';
+
+export async function listWindowItems(bot: BotJava, command: string, windowName: string): Promise<void> {
+    if (bot.isGuiBusy) {
+        bot.logger.warn(`無法執行 '${command}'，因為另一個介面操作正在進行中。`);
+        return;
+    }
+    const gui = bot.gui;
+    if (!gui) {
+        bot.logger.error('GUI 管理器尚未初始化。');
+        return;
+    }
+
+    let window: any = null;
+    bot.isGuiBusy = true;
+    try {
+        window = await gui.open(command);
+        if (!window) return;
+
+        const items = gui.getItems(window).filter((item: any) => item.name !== 'gray_stained_glass_pane');
+        
+        bot.logger.chat(`--- ${bot.config.botTag} 的 ${windowName} 物品列表 ---`);
+
+        if (items.length === 0) {
+            bot.logger.chat('   -> 介面內沒有可操作的物品。');
+        } else {
+            const outputLines = items.map((item: any) => {
+                const slot = `欄位: ${String(item.slot).padEnd(3)}`;
+                const name = item.styledDisplayName || item.displayName;
+                return `- ${slot} | ${name}`;
+            });
+            outputLines.forEach((line: string) => bot.logger.chat(line));
+        }
+        bot.logger.chat(`------------------------------------`);
+
+    } catch (error: any) {
+        bot.logger.error(`處理 ${windowName} 視窗時發生錯誤: ${error.message}`);
+        bot.logger.debug(error.stack);
+    } finally {
+        if (window && bot.client && bot.client.currentWindow?.id === window.id) {
+            bot.client.closeWindow(window);
+        }
+        bot.isGuiBusy = false; // Release the lock
+        bot.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉，鎖已釋放。 ---`);
+    }
+}
+
+export async function takeItemFromWindow(bot: BotJava, command: string, windowName: string, slot: number): Promise<void> {
+    if (bot.isGuiBusy) {
+        bot.logger.warn(`無法執行 '${command}'，因為另一個介面操作正在進行中。`);
+        return;
+    }
+    const gui = bot.gui;
+    if (!gui) {
+        bot.logger.error('GUI 管理器尚未初始化。');
+        return;
+    }
+
+    let window: any = null;
+    bot.isGuiBusy = true;
+    try {
+        window = await gui.open(command);
+        if (!window) return;
+
+        const items = gui.getItems(window);
+        const item = items.find((i: any) => i.slot === slot);
+
+        if (!item) {
+            bot.logger.error(`欄位 ${slot} 中沒有物品。`);
+            if (bot.config.debugMode) {
+                bot.logger.debug("可用的容器欄位:", items.map((i: any) => i.slot));
+            }
+            return;
+        }
+
+        const name = item.styledDisplayName || item.displayName;
+        bot.logger.info(`正在從 ${windowName} 的欄位 ${slot} 拿取 ${name}...`);
+        await gui.click(slot, 'left');
+        bot.logger.info(`✅ 已成功點擊欄位 ${slot}。`);
+
+    } catch (error: any) {
+        bot.logger.error(`從 ${windowName} 拿取物品時發生錯誤: ${error.message}`);
+    } finally {
+        if (window && bot.client && bot.client.currentWindow?.id === window.id) {
+            await sleep(500);
+            bot.client.closeWindow(window);
+        }
+        bot.isGuiBusy = false; // Release the lock
+        bot.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉，鎖已釋放。 ---`);
+    }
+}
+
+export async function interactiveWindowGui(bot: BotJava, command: string, windowName: string, rl: readline.Interface): Promise<void> {
+    if (bot.isGuiBusy) {
+        bot.logger.warn(`無法執行 '${command}'，因為另一個介面操作正在進行中。`);
+        return;
+    }
+    const gui = bot.gui;
+    if (!gui) {
+        bot.logger.error('GUI 管理器尚未初始化。');
+        return;
+    }
+
+    let window: any = null;
+    bot.isGuiBusy = true;
+    try {
+        window = await gui.open(command);
+        if (!window) return;
+
+        logger.unsetRl();
+        rl.pause();
+
+        const guiLoop = async () => {
+            console.log(`
+${Colors.FgCyan}--- ${bot.config.botTag} 的 ${windowName} 互動介面 ---${Colors.Reset}`);
+            const items = gui.getItems(window).filter((item: any) => item.name !== 'gray_stained_glass_pane');
+
+            if (items.length === 0) {
+                console.log('   -> 介面是空的。');
+            } else {
+                items.forEach((item: any) => {
+                    const name = item.styledDisplayName || item.displayName;
+                    console.log(`  [${String(item.slot).padStart(2, ' ')}] ${name} (x${item.count})`);
+                });
+            }
+            console.log(`--------------------------------------------------`);
+
+            const answer: string = await new Promise(resolve => {
+                rl.question(`輸入要點擊的欄位編號，或輸入 'exit'/'e' 離開: `, resolve);
+            });
+            const trimmedAnswer = answer.trim().toLowerCase();
+
+            if (trimmedAnswer === 'exit' || trimmedAnswer === 'e') {
+                return; // Exit the loop
+            }
+
+            const slot = parseInt(trimmedAnswer, 10);
+            if (isNaN(slot)) {
+                console.log(`${Colors.FgRed}無效的輸入，請輸入數字欄位編號。${Colors.Reset}`);
+                await guiLoop();
+                return;
+            }
+
+            const itemToClick = items.find((i: any) => i.slot === slot);
+
+            if (!itemToClick) {
+                console.log(`${Colors.FgYellow}欄位 ${slot} 是空的或無效。${Colors.Reset}`);
+            } else {
+                console.log(`${Colors.FgGreen}正在點擊欄位 ${slot} (${itemToClick.displayName})...${Colors.Reset}`);
+                await gui.click(slot, 'left');
+                await sleep(500); // Wait for server to process
+            }
+
+            await guiLoop();
+        };
+
+        await guiLoop();
+
+    } catch (error: any) {
+        bot.logger.error(`互動式 GUI 發生錯誤: ${error.message}`);
+    } finally {
+        if (window && bot.client && bot.client.currentWindow?.id === window.id) {
+            bot.client.closeWindow(window);
+        }
+        bot.isGuiBusy = false; // Release the lock
+        rl.resume();
+        logger.setRl(rl);
+        rl.prompt(true);
+        bot.logger.debug(`--- [DEBUG] ${windowName} 互動介面已關閉，鎖已釋放。 ---`);
+    }
+}
+
+export async function rideVehicle(bot: BotJava, vehicleName: string, friendlyName: string): Promise<void> {
+    const client = bot.client;
+    if (!client) {
+        bot.logger.warn('機器人未連線，無法執行操作。');
+        return;
+    }
+
+    // 尋找 10 格內最近的載具
+    const vehicle = client.nearestEntity((entity: any) =>
+        entity.name && entity.name.toLowerCase().includes(vehicleName) && client.entity.position.distanceTo(entity.position) < 10
+    );
+
+    if (!vehicle) {
+        bot.logger.warn(`附近 10 格內沒有${friendlyName}。`);
+        return;
+    }
+
+    try {
+        await client.mount(vehicle);
+        bot.logger.info(`✅ 成功坐上${friendlyName}。`);
+    } catch (error: any) {
+        bot.logger.error(`坐上${friendlyName}時發生錯誤: ${error.message}`);
+    }
+}
 
 export async function waitForMinecartAndMount(bot: BotJava, maxDistance = 5): Promise<void> {
     if (bot.state.status !== 'ONLINE' || !bot.client) {

@@ -2,8 +2,7 @@
 import { Bot } from 'mineflayer';
 import { Item } from 'prismarine-item';
 const ChatMessage = require('prismarine-chat');
-import { sleep } from '../bot_core.js';
-import { nbtToJson } from '../console.js';
+import { sleep, nbtToJson } from './utils.js';
 
 // Interface for a parsed item, including its styled name and lore
 export interface ParsedItem {

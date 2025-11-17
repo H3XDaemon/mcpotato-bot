@@ -55,3 +55,27 @@ export const logger = (() => {
 })();
 
 export function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+export function nbtToJson(nbt: any): any {
+    if (typeof nbt !== 'object' || nbt === null) {
+        return nbt;
+    }
+    if (nbt.type && nbt.value !== undefined) {
+        switch (nbt.type) {
+            case 'list':
+                return nbt.value.value.map(nbtToJson);
+            case 'compound':
+                return nbtToJson(nbt.value);
+            default:
+                return nbt.value;
+        }
+    }
+    if (!nbt.type) {
+        const newObj: { [key: string]: any } = {};
+        for (const key in nbt) {
+            newObj[key] = nbtToJson(nbt[key]);
+        }
+        return newObj;
+    }
+    return nbt;
+}

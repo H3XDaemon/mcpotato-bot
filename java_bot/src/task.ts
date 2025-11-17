@@ -1,5 +1,5 @@
 
-import { BotJava } from '../bot_core.js';
+import { BotJava } from './bot.js';
 
 /**
  * Defines the structure for a long-running, repeatable bot task.

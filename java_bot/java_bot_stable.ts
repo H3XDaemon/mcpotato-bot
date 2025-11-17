@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BotJava, logger, sleep } from './bot_core.js';
-import { startConsole, takeItemFromWindow } from './console.js';
+import { BotJava } from './src/bot.js';
+import { logger, sleep } from './src/utils.js';
+import { startConsole } from './src/cli.js';
 
-(global as any).takeItemFromWindow = takeItemFromWindow;
+// (global as any).takeItemFromWindow = takeItemFromWindow;
 
 // =================================================================================
 // 4. MAIN EXECUTION (主程式入口)

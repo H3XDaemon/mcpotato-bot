@@ -1,7 +1,7 @@
 
-import { BotJava } from '../bot_core.js';
+import { BotJava } from './bot.js';
 import { BotTask } from './task.js';
-import { sleep } from '../bot_core.js';
+import { sleep } from './utils.js';
 
 /**
  * A sample task for interacting with the Auction House.

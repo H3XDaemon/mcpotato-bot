@@ -142,7 +142,7 @@ export class BotJava {
     }
 
     _loadTpaWhitelist() {
-        const whitelistPath = path.join(__dirname, '..', 'config', 'tpa_whitelist.json');
+        const whitelistPath = path.join(__dirname, '..', '..', 'config', 'tpa_whitelist.json');
         this.tpaWhitelist.clear(); // Clear existing whitelist before loading
         try {
             if (fs.existsSync(whitelistPath)) {
@@ -204,7 +204,7 @@ export class BotJava {
                 username: this.config.username,
                 version: this.config.version,
                 auth: 'microsoft',
-                profilesFolder: path.join(__dirname, '..', 'profiles'),
+                profilesFolder: path.join(__dirname, '..', '..', 'profiles'),
                 hideErrors: true,
                 onMsaCode: (data: any) => {
                     this.logger.info(`-------------------------------------------------`);
@@ -225,7 +225,7 @@ export class BotJava {
             this.taskManager.register(playerWarpTask);
 
             if (this.config.debugMode) {
-                const logDir = path.join(__dirname, '..', 'logs');
+                const logDir = path.join(__dirname, '..', '..', 'logs');
                 if (!fs.existsSync(logDir)) {
                     fs.mkdirSync(logDir);
                 }
