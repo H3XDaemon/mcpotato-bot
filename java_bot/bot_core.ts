@@ -252,6 +252,7 @@ export class BotJava {
     logExpRate: boolean;
     logger: any;
     tpaWhitelist: Map<string, { allowTpa: boolean, allowTpaHere: boolean }>;
+    lastScannedLevers: any[];
 
     constructor(botConfig: CustomBotOptions, serverList: { host: string, port: number }[]) {
         const defaultConfig = {
@@ -330,6 +331,7 @@ export class BotJava {
         this.lastExpLogTime = 0;
         this.logExpRate = false;
         this.tpaWhitelist = new Map();
+        this.lastScannedLevers = [];
 
         this.logger = Object.fromEntries(
             Object.keys(logger).map(levelName => [
@@ -1363,6 +1365,223 @@ export class BotJava {
         }
         this.logger.debug(`執行指令: ${command}`);
         this.client.chat(command);
+    }
+
+    async waitForMinecartAndMount(maxDistance = 5): Promise<void> {
+        if (this.state.status !== 'ONLINE' || !this.client) {
+            this.logger.warn('機器人離線,無法執行等待礦車指令。');
+            return;
+        }
+
+        const bot = this.client;
+        this.logger.info(`正在等待半徑 ${maxDistance} 格內的礦車...`);
+
+        // 1. Check for existing nearby minecart
+        const nearestMinecart = bot.nearestEntity(entity => {
+            return entity.name === 'minecart' && bot.entity.position.distanceTo(entity.position) <= maxDistance;
+        });
+
+        if (nearestMinecart) {
+            this.logger.info(`偵測到已存在的礦車 (ID: ${nearestMinecart.id}),正在嘗試上車...`);
+            try {
+                await bot.mount(nearestMinecart);
+                this.logger.info('✅ 成功坐上礦車。');
+                return;
+            } catch (err: any) {
+                this.logger.error(`嘗試坐上礦車失敗: ${err.message}`);
+                return;
+            }
+        }
+
+        // 2. Wait for a minecart to spawn OR move into range
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                cleanup();
+                this.logger.warn('等待礦車超時 (2分鐘)。');
+                reject(new Error('Waiting for minecart timed out after 2 minutes.'));
+            }, 120000);
+
+            const cleanup = () => {
+                clearTimeout(timeout);
+                bot.removeListener('entitySpawn', onEntityEvent);
+                bot.removeListener('entityMoved', onEntityEvent);
+            };
+
+            const onEntityEvent = async (entity: any) => {
+                if (entity.name === 'minecart' && bot.entity.position.distanceTo(entity.position) <= maxDistance) {
+                    this.logger.info(`偵測到礦車 (ID: ${entity.id}),正在嘗試上車...`);
+                    cleanup();
+                    try {
+                        await bot.mount(entity);
+                        this.logger.info('✅ 成功坐上礦車。');
+                        resolve();
+                    } catch (err: any) {
+                        this.logger.error(`嘗試坐上礦車失敗: ${err.message}`);
+                        reject(err);
+                    }
+                }
+            };
+
+            bot.on('entitySpawn', onEntityEvent);
+            bot.on('entityMoved', onEntityEvent);
+        });
+    }
+
+    async activateLeverNearBlock(blockTypeName: string, maxDistanceToAnchor = 32, maxDistanceToLever = 5): Promise<void> {
+        if (this.state.status !== 'ONLINE' || !this.client) {
+            this.logger.warn('機器人離線，無法執行拉桿指令。');
+            return;
+        }
+
+        const bot = this.client;
+        const blockType = bot.registry.blocksByName[blockTypeName];
+
+        if (!blockType) {
+            this.logger.error(`未知的方塊類型: '${blockTypeName}'`);
+            return;
+        }
+
+        this.logger.info(`正在尋找半徑 ${maxDistanceToAnchor} 格內的 '${blockTypeName}' 方塊...`);
+        const anchorBlock = await bot.findBlock({
+            matching: blockType.id,
+            maxDistance: maxDistanceToAnchor
+        });
+
+        if (!anchorBlock) {
+            this.logger.warn(`在附近找不到 '${blockTypeName}' 方塊。`);
+            return;
+        }
+        this.logger.info(`找到 '${blockTypeName}' 方塊於 ${anchorBlock.position}。`);
+
+        this.logger.info(`正在尋找 '${blockTypeName}' 附近 ${maxDistanceToLever} 格內的拉桿...`);
+        const leverBlock = await bot.findBlock({
+            matching: bot.registry.blocksByName.lever.id,
+            maxDistance: maxDistanceToLever,
+            point: anchorBlock.position
+        });
+
+        if (!leverBlock) {
+            this.logger.warn(`在 '${blockTypeName}' 附近找不到拉桿。`);
+            return;
+        }
+        this.logger.info(`找到拉桿於 ${leverBlock.position}。`);
+
+        // Helper function to get lever state
+        const getLeverState = (block: any) => {
+            if (bot.supportFeature('blockStateId')) {
+                return block.getProperties().powered;
+            } else {
+                return (block.metadata & 0x8) !== 0;
+            }
+        };
+
+        const initialPoweredState = getLeverState(leverBlock);
+        this.logger.info(`拉桿初始狀態: ${initialPoweredState ? '開啟' : '關閉'}`);
+
+        try {
+            await bot.activateBlock(leverBlock);
+            this.logger.info('✅ 成功切換拉桿。');
+
+            // Wait for block update to propagate
+            await sleep(500); // Wait 0.5 seconds, similar to bot.waitForTicks(2)
+
+            const updatedLeverBlock = bot.blockAt(leverBlock.position);
+            if (updatedLeverBlock && updatedLeverBlock.name === 'lever') {
+                const finalPoweredState = getLeverState(updatedLeverBlock);
+                this.logger.info(`拉桿切換後狀態: ${finalPoweredState ? '開啟' : '關閉'}`);
+            } else {
+                this.logger.warn('切換後無法重新獲取拉桿方塊狀態。');
+            }
+
+        } catch (err: any) {
+            this.logger.error(`切換拉桿失敗: ${err.message}`);
+        }
+    }
+
+    async findAndReportLevers(radius = 10): Promise<string[]> {
+        if (!this.client) {
+            this.logger.warn('機器人離線，無法掃描拉桿。');
+            return ['機器人離線，無法掃描拉桿。'];
+        }
+        const bot = this.client;
+
+        this.logger.info(`正在掃描半徑 ${radius} 格內的拉桿...`);
+        const levers = await bot.findBlocks({
+            matching: bot.registry.blocksByName.lever.id,
+            maxDistance: radius,
+            count: 20 // Limit to 20 levers
+        });
+
+        if (levers.length === 0) {
+            this.lastScannedLevers = [];
+            return ["附近沒有找到任何拉桿。"];
+        }
+
+        this.lastScannedLevers = []; // Clear previous scan
+        const reportLines: string[] = [];
+
+        for (const leverPos of levers) {
+            const leverBlock = bot.blockAt(leverPos);
+            if (!leverBlock) continue;
+
+            const isPowered = (bot.supportFeature('blockStateId'))
+                ? leverBlock.getProperties().powered
+                : (leverBlock.metadata & 0x8) !== 0;
+            const stateStr = isPowered ? '開啟' : '關閉';
+
+            this.lastScannedLevers.push(leverBlock);
+            const index = this.lastScannedLevers.length;
+
+            reportLines.push(`[${index}] 拉桿於 (${leverBlock.position.x}, ${leverBlock.position.y}, ${leverBlock.position.z}) - 狀態: ${stateStr}`);
+        }
+
+        return reportLines;
+    }
+
+    async activateLeverByIndex(index: number): Promise<void> {
+        if (!this.client) {
+            this.logger.warn('機器人離線，無法啟動拉桿。');
+            return;
+        }
+
+        const leverIndex = index - 1; // User sees 1-based, array is 0-based
+        if (leverIndex < 0 || leverIndex >= this.lastScannedLevers.length) {
+            this.logger.error(`無效的拉桿編號: ${index}。請先執行 'lever' 指令掃描。`);
+            return;
+        }
+
+        const leverBlock = this.lastScannedLevers[leverIndex];
+        this.logger.info(`正在啟動編號 ${index} 的拉桿於 ${leverBlock.position}...`);
+        
+        // Reuse the state checking logic
+        const bot = this.client;
+        const getLeverState = (block: any) => {
+            if (bot.supportFeature('blockStateId')) {
+                return block.getProperties().powered;
+            } else {
+                return (block.metadata & 0x8) !== 0;
+            }
+        };
+
+        const initialPoweredState = getLeverState(leverBlock);
+        this.logger.info(`拉桿初始狀態: ${initialPoweredState ? '開啟' : '關閉'}`);
+
+        try {
+            await bot.activateBlock(leverBlock);
+            this.logger.info('✅ 成功切換拉桿。');
+
+            await sleep(500);
+
+            const updatedLeverBlock = bot.blockAt(leverBlock.position);
+            if (updatedLeverBlock && updatedLeverBlock.name === 'lever') {
+                const finalPoweredState = getLeverState(updatedLeverBlock);
+                this.logger.info(`拉桿切換後狀態: ${finalPoweredState ? '開啟' : '關閉'}`);
+            } else {
+                this.logger.warn('切換後無法重新獲取拉桿方塊狀態。');
+            }
+        } catch (err: any) {
+            this.logger.error(`切換拉桿失敗: ${err.message}`);
+        }
     }
 
     displayExperience() {

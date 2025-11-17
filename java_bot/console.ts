@@ -311,8 +311,9 @@ ${Colors.FgCyan}======================================================${Colors.R
    say <訊息> [@目標]   - 在遊戲中發言
    work <start|stop> [@目標] - 啟動或停止自動 Trial Omen 工作模式
    task <list|start|stop> [@目標] - 管理背景任務 (例如 AH, PW 掃描)
-   mount <cart|boat> [@目標] - 騎乘附近的礦車或船
+   mount <cart|boat> [wait] [@目標] - 騎乘附近的礦車或船 (使用 'wait cart' 等待礦車)
    dismount [@目標]     - 從坐騎上下來
+   lever [<編號>|<方塊>] - 掃描，或依編號/方塊名啟動拉桿
    pos [@目標]          - 取得目前座標
    tps [@目標]          - 取得伺服器目前的 TPS (多種方法)
    exp [toggle] [@目標] - 顯示經驗值資訊，或開關 exp/h 日誌
@@ -421,22 +422,37 @@ ${Colors.FgCyan}======================================================${Colors.R
         },
         'mount': async (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
-            const subCommand = cleanArgs[0]?.toLowerCase();
+            const vehicleType = cleanArgs[0]?.toLowerCase(); // e.g., 'cart', 'boat'
+            const action = cleanArgs[1]?.toLowerCase(); // e.g., 'wait'
 
-            if (!['cart', 'boat'].includes(subCommand)) {
+            if (!['cart', 'boat'].includes(vehicleType)) {
                 logger.error('無效的 mount 指令。支援 "cart" (礦車), "boat" (船)。');
+                return;
+            }
+            if (action && action !== 'wait') {
+                logger.error('無效的 mount 動作。支援 "wait"。');
+                return;
+            }
+            if (action === 'wait' && vehicleType !== 'cart') {
+                logger.error('目前 "wait" 動作僅支援 "cart" (礦車)。');
                 return;
             }
 
             for (const bot of targets) {
                 if (bot.state.status !== 'ONLINE') {
-                    bot.logger.warn('機器人未上線，無法騎乘。');
+                    bot.logger.warn('機器人未上線，無法執行騎乘操作。');
                     continue;
                 }
 
-                if (subCommand === 'cart') {
+                if (action === 'wait' && vehicleType === 'cart') {
+                    try {
+                        await bot.waitForMinecartAndMount();
+                    } catch (error: any) {
+                        bot.logger.error(`等待並騎乘礦車失敗: ${error.message}`);
+                    }
+                } else if (vehicleType === 'cart') {
                     await rideVehicle(bot, 'minecart', '礦車');
-                } else if (subCommand === 'boat') {
+                } else if (vehicleType === 'boat') {
                     await rideVehicle(bot, 'boat', '船');
                 }
             }
@@ -455,6 +471,34 @@ ${Colors.FgCyan}======================================================${Colors.R
                     bot.logger.warn('機器人目前沒有在任何坐騎上。');
                 }
             });
+        },
+        'lever': async (args: string[]) => {
+            const { targets, cleanArgs } = parseCommandTargets(args);
+            const argument = cleanArgs[0];
+
+            for (const bot of targets) {
+                if (bot.state.status !== 'ONLINE') {
+                    bot.logger.warn('機器人未上線，無法執行拉桿指令。');
+                    continue;
+                }
+
+                // Case 1: No argument - Scan for levers
+                if (!argument) {
+                    const reportLines = await bot.findAndReportLevers();
+                    reportLines.forEach((line: string) => bot.logger.info(line));
+                    continue;
+                }
+
+                // Case 2: Argument is a number - Activate by index
+                const index = parseInt(argument, 10);
+                if (!isNaN(index)) {
+                    await bot.activateLeverByIndex(index);
+                    continue;
+                }
+
+                // Case 3: Argument is a string - Activate near anchor block
+                await bot.activateLeverNearBlock(argument);
+            }
         },
         'pos': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
