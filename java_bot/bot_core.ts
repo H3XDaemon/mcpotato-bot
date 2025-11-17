@@ -671,6 +671,7 @@ export class BotJava {
                     const currentClient = this.client; // Capture the client instance at this moment.
 
                     try {
+                        currentClient.chat('/ah'); // <<<< 執行指令
                         // 使用 Promise.race 來處理多種可能的回應
                         const raceResult: any = await Promise.race([
                             // 1. 成功開啟視窗
@@ -748,14 +749,22 @@ export class BotJava {
             if (!this.client) return;
             this.logger.info('機器人已在遊戲世界中生成。');
 
+            // Add a delay before starting work to allow for full state synchronization (effects, inventory, etc.)
+            this.logger.info('等待 5 秒以確保客戶端狀態同步...');
+            await sleep(5000);
+
+            if (!this.client) { // Re-check client status after sleep
+                this.logger.warn('機器人在同步等待期間斷線，已中止 spawn 相關操作。');
+                return;
+            }
+
+            this.logger.info(`目前位置: ${this.client.entity.position}`);
+
             // Start work mode after spawning to ensure inventory is loaded
             if (this.config.startWorkOnLogin && !this.isWorking) {
                 this.startWork();
             }
-            await sleep(2000);
-            if (this.client) {
-                this.logger.info(`目前位置: ${this.client.entity.position}`);
-            }
+
             if (this.config.enableViewer) {
                 // Dynamically import viewer dependencies only when needed
                 try {
