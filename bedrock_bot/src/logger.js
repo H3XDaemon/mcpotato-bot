@@ -72,4 +72,15 @@ logger.setRl = (rl) => {
     rlInterface = rl;
 };
 
-module.exports = { logger };
+const packetLogger = winston.createLogger({
+    level: 'debug',
+    format: winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.printf(({ timestamp, message }) => `[${timestamp}] ${message}`)
+    ),
+    transports: [
+        new winston.transports.File({ filename: 'logs/packets.log', options: { flags: 'w' } })
+    ]
+});
+
+module.exports = { logger, packetLogger };

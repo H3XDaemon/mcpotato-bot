@@ -4,10 +4,11 @@ const Bot = require('./bot.js');
 const { logger, sleep, Colors } = require('./utils.js');
 
 class BotManager {
-    constructor(itemMapping) {
+    constructor(itemMapping, tpaWhitelist = []) {
         this.bots = new Map();
         this.botTagsByIndex = [];
         this.itemMapping = itemMapping;
+        this.tpaWhitelist = tpaWhitelist;
     }
 
     loadAccounts(accountsPath) {
@@ -48,7 +49,7 @@ class BotManager {
             // 將 serverList 注入到 bot 的設定中
             const botConfig = { ...config, serverList };
 
-            const bot = new Bot(botConfig, this.itemMapping);
+            const bot = new Bot(botConfig, this.itemMapping, this.tpaWhitelist);
             this.bots.set(config.botTag, bot);
             this.botTagsByIndex.push(config.botTag);
         }

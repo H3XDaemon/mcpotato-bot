@@ -22,7 +22,20 @@ async function main() {
         process.exit(1);
     }
 
-    const botManager = new BotManager(itemMapping);
+    const tpaWhitelistPath = path.join(__dirname, 'config', 'tpa_whitelist.json');
+    let tpaWhitelist = [];
+    if (fs.existsSync(tpaWhitelistPath)) {
+        try {
+            tpaWhitelist = JSON.parse(fs.readFileSync(tpaWhitelistPath, 'utf-8'));
+            logger.info(`成功載入 ${tpaWhitelist.length} 個 TPA 白名單玩家。`);
+        } catch (error) {
+            logger.error(`讀取或解析 TPA 白名單時發生錯誤: ${error.message}`);
+        }
+    } else {
+        logger.warn(`未找到 TPA 白名單檔案 (${tpaWhitelistPath})，將不會啟用自動同意功能。`);
+    }
+
+    const botManager = new BotManager(itemMapping, tpaWhitelist);
     const accountsPath = path.join(__dirname, 'config', 'accounts.json');
     botManager.loadAccounts(accountsPath);
     botManager.connectEnabledBots();

@@ -14,11 +14,13 @@ let isAppShuttingDown = false;
 const setAppShutdown = () => { isAppShuttingDown = true; };
 const getAppShutdown = () => isAppShuttingDown;
 
-const { logger } = require('./logger.js');
+const { logger, packetLogger } = require('./logger.js');
 
 module.exports = {
+    Colors,
     parseMinecraftColors,
     logger,
+    packetLogger,
     sleep,
     setAppShutdown,
     getAppShutdown

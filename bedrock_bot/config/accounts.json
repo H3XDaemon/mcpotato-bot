@@ -7,7 +7,7 @@
     "profilePath": "./profiles/online_bot1",
     "autoWithdraw": {
       "enabled": true,
-      "intervalMinutes": 4.5,
+      "intervalMinutes": 4.55,
       "withdrawThreshold": 1135
     }
   },
@@ -22,5 +22,18 @@
       "intervalMinutes": 4.6,
       "withdrawThreshold": 3500
     }
+  },
+  {
+    "enabled": true,
+    "botTag": "OnlineBot_3",
+    "server": "mcpotato_bedrock",
+    "offline": false,
+    "profilePath": "./profiles/online_bot3",
+    "autoWithdraw": {
+      "enabled": true,
+      "intervalMinutes": 4.65,
+      "withdrawThreshold": 3500
+    },
+    "debug": true
   }
 ]

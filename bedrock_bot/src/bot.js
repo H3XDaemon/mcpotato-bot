@@ -1,6 +1,6 @@
 const { createClient } = require('bedrock-protocol');
 const minecraftData = require('minecraft-data');
-const { logger, sleep, parseMinecraftColors, getAppShutdown } = require('./utils.js');
+const { logger, sleep, parseMinecraftColors, getAppShutdown, packetLogger } = require('./utils.js');
 const { QueueProcessor } = require('./queue.js');
 const { ATM_OPERATION_TIMEOUT } = require('./atm.js');
 const { HOME_OPERATION_TIMEOUT } = require('./home.js');
@@ -17,7 +17,7 @@ const ClientStatus = {
 };
 
 class Bot {
-    constructor(botConfig, itemMapping) {
+    constructor(botConfig, itemMapping, tpaWhitelist = []) {
         this.config = {
             offline: true, profilePath: './profiles', version: '1.21.111',
             autoRespawn: true,
@@ -26,6 +26,7 @@ class Bot {
             ...botConfig
         };
         this.itemMapping = itemMapping;
+        this.tpaWhitelist = tpaWhitelist;
         this.client = null;
         this.state = { status: 'OFFLINE' };
         this.inventory = new Map();
@@ -119,13 +120,13 @@ class Bot {
     _setupEventListeners() {
         this.client.on('packet', (packet) => {
             if (!this.config.debug) return;
-            
-            const ignoredPackets = ['network_chunk_publisher_update', 'level_chunk', 'set_entity_data', 'move_player', 'update_attributes'];
-            if (!ignoredPackets.includes(packet.name)) {
-                this.logger.debug(`[RAW PACKET] Name: ${packet.name}`);
-                if (packet.name === 'inventory_content') {
-                    this.logger.debug(` -> Window ID: ${packet.params.window_id}`);
-                }
+
+            const stringifyWithBigInt = (obj) => JSON.stringify(obj, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2);
+            const packetName = packet.data?.name;
+
+            const packetsToLog = ['text', 'modal_form_request'];
+            if (packetsToLog.includes(packetName)) {
+                packetLogger.debug(`[${this.config.botTag}] Name: ${packetName}, Data: ${stringifyWithBigInt(packet.data)}`);
             }
         });
 
@@ -315,6 +316,7 @@ class Bot {
     }
 
     _handleText(packet) {
+        this.logger.debug(`[_handleText] Received text packet: ${JSON.stringify(packet)}`);
         const { type, source_name, message: rawMessage } = packet;
         if (type === 'jukebox_popup') return;
         const message = parseMinecraftColors(rawMessage);
@@ -325,6 +327,21 @@ class Bot {
             if (this.config.autoWithdraw.enabled && rawMessage.includes('達到在線賺錢上限')) {
                 this.logger.info('偵測到餘額上限訊息，觸發提款檢查。');
                 this._checkAndWithdraw();
+            }
+
+            if (rawMessage.includes('請求您傳送過去')) {
+                const strippedMessage = rawMessage.replace(/§./g, '');
+                const match = strippedMessage.match(/(.+?)\s請求您傳送過去/);
+
+                if (match && match[1]) {
+                    const playerName = match[1].trim();
+                    if (this.tpaWhitelist.includes(playerName)) {
+                        this.logger.info(`偵測到來自白名單玩家 ${playerName} 的 TPA 請求，自動接受。`);
+                        this.runCommand('tpyes');
+                    } else {
+                        this.logger.info(`偵測到來自非白名單玩家 ${playerName} 的 TPA 請求，已忽略。`);
+                    }
+                }
             }
         }
     }
