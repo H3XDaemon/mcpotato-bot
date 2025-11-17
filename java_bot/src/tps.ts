@@ -45,7 +45,7 @@ export class TPSMonitor {
             // The primitive value is obtained by just assigning it. TypeScript's lib.es2020.d.ts handles this.
             // The issue was likely conflicting or outdated type definitions.
             // Let's treat it as a primitive `bigint` directly.
-            this.lastGameTime = this.bot.time.bigTime.valueOf();
+            this.lastGameTime = BigInt(String(this.bot.time.bigTime));
             this.lastRealTime = Date.now();
             if (!this.gameTimeInterval) { // Prevent creating multiple intervals
                 this.gameTimeInterval = setInterval(() => this.calculateGameTimeTPS(), 1000);
@@ -100,7 +100,7 @@ export class TPSMonitor {
     calculateGameTimeTPS() {
         if (!this.bot.time || typeof this.bot.time.bigTime === 'undefined' || this.bot.time.bigTime === null) return;
 
-        const currentGameTime = this.bot.time.bigTime.valueOf();
+        const currentGameTime = BigInt(String(this.bot.time.bigTime));
         const currentRealTime = Date.now();
 
         // Ensure we are working with primitive bigints for subtraction
