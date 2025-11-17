@@ -20,8 +20,7 @@
   "dependencies": {
     "@types/node": "^20.0.0",
     "cross-env": "^10.1.0",
-    "mineflayer": "^4.0.0",
-    "mineflayer-tps": "^1.0.1"
+    "mineflayer": "^4.0.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

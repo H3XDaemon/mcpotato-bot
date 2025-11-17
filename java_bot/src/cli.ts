@@ -294,14 +294,13 @@ ${Colors.FgCyan}======================================================${Colors.R
                     continue;
                 }
                 try {
-                    const pluginTps = await bot.tpsMonitor.getPluginTPS();
                     const packetTps = bot.tpsMonitor.getPacketTPS();
                     const physicsTps = bot.tpsMonitor.getPhysicsTPS();
                     const gameTimeTps = bot.tpsMonitor.getGameTimeTPS();
 
                     const formatTps = (tps: number) => (tps < 0 ? '錯誤' : tps.toFixed(2).padStart(5));
 
-                    bot.logger.info(`伺服器 TPS - [插件]: ${formatTps(pluginTps)} | [封包]: ${formatTps(packetTps)} | [物理]: ${formatTps(physicsTps)} | [時間]: ${formatTps(gameTimeTps)}`);
+                    bot.logger.info(`伺服器 TPS - [封包]: ${formatTps(packetTps)} | [物理]: ${formatTps(physicsTps)} | [時間]: ${formatTps(gameTimeTps)}`);
 
                 } catch (error: any) {
                     bot.logger.error(`取得 TPS 時發生錯誤: ${error.message}`);

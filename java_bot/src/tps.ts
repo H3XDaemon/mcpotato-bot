@@ -103,15 +103,6 @@ export class TPSMonitor {
         if (this.tpsHistory.length === 0) return 20.0;
         return this.tpsHistory.reduce((a: number, b: number) => a + b) / this.tpsHistory.length;
     }
-
-    // --- Plugin Method (Wrapper) ---
-    async getPluginTPS() {
-        try {
-            return await this.bot.getTps();
-        } catch (e) {
-            return -1; // 表示錯誤
-        }
-    }
     
     // --- Cleanup ---
     stop() {

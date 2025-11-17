@@ -3,7 +3,6 @@ import * as path from 'path';
 import * as util from 'util';
 
 import mineflayer from 'mineflayer';
-import tpsPlugin from 'mineflayer-tps';
 
 import { CustomBotOptions } from './interfaces';
 import { logger, sleep } from './utils';
@@ -214,7 +213,6 @@ export class BotJava {
                     this.logger.info(`-------------------------------------------------`);
                 }
             });
-            this.client.loadPlugin(tpsPlugin);
             this.tpsMonitor = new TPSMonitor(this.client);
             this.gui = new GuiManager(this.client);
             this.taskManager = new TaskManager(this);
