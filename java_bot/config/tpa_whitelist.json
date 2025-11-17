@@ -1,0 +1,10 @@
+{
+    "devxeno": {
+        "allowTpa": true,
+        "allowTpaHere": true
+    },
+    "another_player": {
+        "allowTpa": true,
+        "allowTpaHere": false
+    }
+}

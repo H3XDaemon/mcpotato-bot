@@ -251,6 +251,7 @@ export class BotJava {
     lastExpLogTime: number;
     logExpRate: boolean;
     logger: any;
+    tpaWhitelist: Map<string, { allowTpa: boolean, allowTpaHere: boolean }>;
 
     constructor(botConfig: CustomBotOptions, serverList: { host: string, port: number }[]) {
         const defaultConfig = {
@@ -328,6 +329,7 @@ export class BotJava {
         this.lastExpSampleTime = 0;
         this.lastExpLogTime = 0;
         this.logExpRate = false;
+        this.tpaWhitelist = new Map();
 
         this.logger = Object.fromEntries(
             Object.keys(logger).map(levelName => [
@@ -341,7 +343,36 @@ export class BotJava {
         );
     }
 
+    _loadTpaWhitelist() {
+        const whitelistPath = path.join(__dirname, '..', 'config', 'tpa_whitelist.json');
+        this.tpaWhitelist.clear(); // Clear existing whitelist before loading
+        try {
+            if (fs.existsSync(whitelistPath)) {
+                const data = fs.readFileSync(whitelistPath, 'utf-8');
+                const playerPermissions: { [key: string]: { allowTpa: boolean, allowTpaHere: boolean } } = JSON.parse(data);
+                
+                for (const playerName in playerPermissions) {
+                    if (Object.prototype.hasOwnProperty.call(playerPermissions, playerName)) {
+                        const lowerCasePlayerName = playerName.toLowerCase();
+                        const permissions = playerPermissions[playerName];
+                        this.tpaWhitelist.set(lowerCasePlayerName, {
+                            allowTpa: permissions.allowTpa || false,
+                            allowTpaHere: permissions.allowTpaHere || false
+                        });
+                    }
+                }
+                this.logger.info(`已成功加載 TPA 白名單，共 ${this.tpaWhitelist.size} 位玩家。`);
+            } else {
+                this.logger.warn('TPA 白名單文件 (config/tpa_whitelist.json) 不存在，將不會自動接受任何 TPA 請求。');
+            }
+        } catch (error: any) {
+            this.logger.error(`加載 TPA 白名單時發生錯誤: ${error.message}`);
+            this.tpaWhitelist.clear();
+        }
+    }
+
     async connect() {
+        this._loadTpaWhitelist();
         if (this.state.status === 'CONNECTING' || this.state.status === 'ONLINE') {
             this.logger.warn('連線請求被忽略，機器人正在連線或已在線上。');
             return;
@@ -950,6 +981,39 @@ export class BotJava {
                     }
                 }
                 const cleanMessageText = messageText.replace(/§[0-9a-fk-or]/g, '');
+
+                // ++ TPA Whitelist Logic ++
+                const tpaRequestMatch = cleanMessageText.match(/^(.+?) 請求您傳送過去。/); // Player wants bot to go to them
+                const tpaHereRequestMatch = cleanMessageText.match(/^(.+?) 請求傳送過來。/); // Player wants to come to bot
+
+                let playerName: string | null = null;
+                let permissionType: 'allowTpa' | 'allowTpaHere' | null = null;
+                let requestTypeLog = '';
+
+                if (tpaRequestMatch) {
+                    playerName = tpaRequestMatch[1].toLowerCase();
+                    permissionType = 'allowTpa';
+                    requestTypeLog = `傳送過去 (${tpaRequestMatch[1]})`;
+                } else if (tpaHereRequestMatch) {
+                    playerName = tpaHereRequestMatch[1].toLowerCase();
+                    permissionType = 'allowTpaHere';
+                    requestTypeLog = `傳送過來 (${tpaHereRequestMatch[1]})`;
+                }
+
+                if (playerName && permissionType) {
+                    const permissions = this.tpaWhitelist.get(playerName);
+                    if (permissions && permissions[permissionType]) {
+                        this.logger.info(`[TPA] 偵測到白名單玩家的請求: ${requestTypeLog}，權限符合，將自動接受。`);
+                        // A small delay to mimic human reaction and avoid potential server-side race conditions
+                        setTimeout(() => {
+                            this.runCommand('/tpyes');
+                        }, 1500);
+                    } else {
+                        this.logger.info(`[TPA] 偵測到玩家請求: ${requestTypeLog}，但該玩家不在白名單或無此權限，將不予理會。`);
+                    }
+                }
+                // -- End TPA Whitelist Logic --
+
                 if (cleanMessageText.includes('達到在線賺錢上限')) {
                     this.logger.info('偵測到「達到在線賺錢上限」訊息，將自動提款...');
                     setTimeout(() => {
