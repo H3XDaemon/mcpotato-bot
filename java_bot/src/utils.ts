@@ -1,5 +1,6 @@
 import * as readline from 'readline';
 import * as util from 'util';
+import { BotJava } from './bot';
 
 export const Colors = {
     Reset: "\x1b[0m", FgGreen: "\x1b[32m", FgRed: "\x1b[31m", FgYellow: "\x1b[33m", FgCyan: "\x1b[36m", FgMagenta: "\x1b[35m"
@@ -7,10 +8,10 @@ export const Colors = {
 
 export const logger = (() => {
     let rlInterface: readline.Interface | null = null;
-    let activeBotForLogging: any = null;
+    let activeBotForLogging: BotJava | null = null;
     const LogLevel: { [key: string]: number } = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3, CHAT: 4 };
 
-    const log = (level: number, ...args: any[]) => {
+    const log = (level: number, ...args: unknown[]) => {
         if (level === LogLevel.DEBUG) {
             // If a bot is active, respect its setting. Otherwise, check the env var as a fallback for non-bot logs.
             if (activeBotForLogging && !activeBotForLogging.config.debugMode) return;
@@ -44,12 +45,12 @@ export const logger = (() => {
     return {
         setRl: (rl: readline.Interface) => { rlInterface = rl; },
         unsetRl: () => { rlInterface = null; },
-        setActiveBot: (bot: any) => { activeBotForLogging = bot; },
-        debug: (...args: any[]) => log(LogLevel.DEBUG, ...args),
-        info: (...args: any[]) => log(LogLevel.INFO, ...args),
-        warn: (...args: any[]) => log(LogLevel.WARN, ...args),
-        error: (...args: any[]) => log(LogLevel.ERROR, ...args),
-        chat: (...args: any[]) => log(LogLevel.CHAT, ...args),
+        setActiveBot: (bot: BotJava | null) => { activeBotForLogging = bot; },
+        debug: (...args: unknown[]) => log(LogLevel.DEBUG, ...args),
+        info: (...args: unknown[]) => log(LogLevel.INFO, ...args),
+        warn: (...args: unknown[]) => log(LogLevel.WARN, ...args),
+        error: (...args: unknown[]) => log(LogLevel.ERROR, ...args),
+        chat: (...args: unknown[]) => log(LogLevel.CHAT, ...args),
         Colors: Colors
     };
 })();

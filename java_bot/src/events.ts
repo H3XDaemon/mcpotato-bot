@@ -1,7 +1,16 @@
+import { Window } from 'prismarine-windows';
+import { IEffect, IRaceResult, IItemData } from './interfaces';
+import { Entity } from 'prismarine-entity';
 import { BotJava } from "./bot";
 import { ChatMessage } from 'prismarine-chat';
 import * as util from 'util';
 import { sleep } from "./utils";
+import { takeItemFromWindow } from './actions.js';
+
+function isItemData(value: unknown): value is IItemData {
+    return typeof value === 'object' && value !== null && ('itemId' in value || 'blockId' in value);
+}
+
 
 export function setupEventListeners(bot: BotJava) {
     if (!bot.client) return;
@@ -31,7 +40,7 @@ export function setupEventListeners(bot: BotJava) {
             bot.tpsMonitor.start();
         }
 
-        if (bot.config.antiAfk.enabled) {
+        if (bot.config.antiAfk?.enabled) { // Added null/undefined check
             if (bot.antiAfkInterval) clearInterval(bot.antiAfkInterval);
             bot.antiAfkInterval = setInterval(async () => {
                 if (bot.state.status !== 'ONLINE' || !bot.client || bot.isGuiBusy) {
@@ -50,10 +59,10 @@ export function setupEventListeners(bot: BotJava) {
                 try {
                     currentClient.chat('/ah'); // <<<< 執行指令
                     // 使用 Promise.race 來處理多種可能的回應
-                    const raceResult: any = await Promise.race([
+                    const raceResult: IRaceResult = await Promise.race([ // Explicitly cast
                         // 1. 成功開啟視窗
-                        new Promise((resolve) => {
-                            const onWindowOpen = (win: any) => {
+                        new Promise<IRaceResult>((resolve) => {
+                            const onWindowOpen = (win: Window) => {
                                 currentClient.removeListener('end', onEnd);
                                 resolve({ event: 'windowOpen', window: win });
                             };
@@ -65,7 +74,7 @@ export function setupEventListeners(bot: BotJava) {
                             currentClient.once('end', onEnd);
                         }),
                         // 2. 收到錯誤訊息
-                        new Promise((resolve) => {
+                        new Promise<IRaceResult>((resolve) => {
                             const keywords = ['錯誤', '等待', '冷卻', 'error', 'wait', 'cooldown'];
                             const onMessage = (jsonMsg: ChatMessage) => {
                                 const text = jsonMsg.toString().toLowerCase();
@@ -83,7 +92,7 @@ export function setupEventListeners(bot: BotJava) {
                             currentClient.once('end', onEnd);
                         }),
                         // 3. 超時
-                        new Promise((resolve) => {
+                        new Promise<IRaceResult>((resolve) => {
                             setTimeout(() => resolve({ event: 'timeout' }), 10000);
                         })
                     ]);
@@ -93,7 +102,9 @@ export function setupEventListeners(bot: BotJava) {
                         case 'windowOpen':
                             bot.logger.info('[Anti-AFK] /ah 視窗已成功開啟。');
                             await sleep(1000); // Wait a second before closing
-                            raceResult.window.close();
+                            if (raceResult.window) {
+                                currentClient.closeWindow(raceResult.window);
+                            }
                             bot.logger.info('[Anti-AFK] /ah 介面已成功關閉。');
                             break;
                         case 'chatError':
@@ -107,8 +118,9 @@ export function setupEventListeners(bot: BotJava) {
                             throw new Error('未知的 Anti-AFK 競態結果');
                     }
 
-                } catch (err: any) {
-                    bot.logger.error(`[Anti-AFK] 操作失敗: ${err.message}`);
+                } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    bot.logger.error(`[Anti-AFK] 操作失敗: ${message}`);
                     // If an error occurs, it's possible a window is stuck open.
                     if (currentClient && currentClient.currentWindow) {
                         bot.logger.warn('[Anti-AFK] 嘗試關閉可能殘留的視窗...');
@@ -117,8 +129,8 @@ export function setupEventListeners(bot: BotJava) {
                 } finally {
                     bot.isGuiBusy = false;
                 }
-            }, bot.config.antiAfk.intervalMinutes * 60 * 1000);
-            bot.logger.info(`Anti-AFK 功能已更新為執行 /ah 指令，每 ${bot.config.antiAfk.intervalMinutes} 分鐘執行一次。`);
+            }, (bot.config.antiAfk?.intervalMinutes || 4) * 60 * 1000); // Added null/undefined check
+            bot.logger.info(`Anti-AFK 功能已更新為執行 /ah 指令，每 ${(bot.config.antiAfk?.intervalMinutes || 4)} 分鐘執行一次。`); // Added null/undefined check
         }
     });
 
@@ -148,15 +160,16 @@ export function setupEventListeners(bot: BotJava) {
                 const viewerModule = (await import('prismarine-viewer')).mineflayer;
                 const { Canvas } = await import('canvas');
                 await bot.startViewer(viewerModule, { Canvas });
-            } catch (e: any) {
-                bot.logger.error(`無法加載監看視窗模組: ${e.message}`);
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                bot.logger.error(`無法加載監看視窗模組: ${message}`);
                 bot.logger.warn('請執行 "npm install prismarine-viewer canvas" 來安裝監看視窗的依賴。');
                 bot.config.enableViewer = false;
             }
         }
     });
 
-    bot.client.on('entityEffect', async (entity: any, effect: any) => {
+    bot.client.on('entityEffect', async (entity: Entity, effect: IEffect) => {
         const client = bot.client;
         if (!client) return;
         if (entity === client.entity) {
@@ -176,11 +189,11 @@ export function setupEventListeners(bot: BotJava) {
                 bot.logger.info(`[狀態更新] ${action}效果: ${name} (等級: ${effect.amplifier + 1})`);
             }
 
-            bot.lastKnownEffects.set(effect.id, { id: effect.id, amplifier: effect.amplifier });
+            bot.lastKnownEffects.set(effect.id, { id: effect.id, amplifier: effect.amplifier, duration: effect.duration }); // Added duration
         }
     });
     
-    bot.client.on('entityEffectEnd', async (entity: any, effect: any) => {
+    bot.client.on('entityEffectEnd', async (entity: Entity, effect: IEffect) => {
         const client = bot.client;
         if (!client) return;
         if (entity === client.entity && bot.lastKnownEffects.has(effect.id)) {
@@ -199,12 +212,12 @@ export function setupEventListeners(bot: BotJava) {
                 
                 if (bot.workTimeout) clearTimeout(bot.workTimeout);
                 
-                (bot as any).workTimeout = setTimeout(() => (bot as any)._maintainOmenEffect(), bot.config.omenReapplyDelay);
+                bot.workTimeout = setTimeout(() => bot.maintainOmenEffect(), bot.config.omenReapplyDelay);
             }
         }
     });
 
-    bot.client.on('itemDrop', (entity: any) => {
+    bot.client.on('itemDrop', (entity: Entity,) => {
         const client = bot.client;
         if (!client || !bot.config.enableItemDropDetection) return;
         if (!entity || !entity.metadata) return;
@@ -221,7 +234,7 @@ export function setupEventListeners(bot: BotJava) {
         }
 
         try {
-            let itemData: any;
+            let itemData: IItemData | undefined;
             let slotPosition: number;
 
             // ++ 修改 ++ 根據日誌和版本特性，更精準地判斷 slot 位置
@@ -238,16 +251,21 @@ export function setupEventListeners(bot: BotJava) {
                 }
             }
 
-            itemData = entity.metadata[slotPosition];
+            const metadataValue = entity.metadata[slotPosition];
+            if (isItemData(metadataValue)) {
+                itemData = metadataValue;
+            }
+
 
             if (!itemData) {
                 bot.logger.warn(`[掉落物] 在預期的 metadata[${slotPosition}] 中找不到物品數據，將嘗試遍歷搜尋...`);
                 for (const [key, value] of Object.entries(entity.metadata)) {
-                    if (value && ((value as any).itemId !== undefined || (value as any).blockId !== undefined)) {
+                    if (isItemData(value)) {
                         bot.logger.info(`[掉落物] 在 metadata[${key}] 找到備用物品數據！`);
                         itemData = value;
                         break; 
                     }
+                    
                 }
             }
             
@@ -284,13 +302,16 @@ export function setupEventListeners(bot: BotJava) {
                 bot.logger.info(`[戰利品] ominous_trial_key 掉落了 ${itemCount} 個，目前總計: ${bot.ominousTrialKeyDrops}`);
             }
 
-        } catch (error: any) {
-            bot.logger.error(`處理掉落物時發生錯誤: ${error.message}`);
-            bot.logger.debug(error.stack);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            bot.logger.error(`處理掉落物時發生錯誤: ${message}`);
+            if (error instanceof Error && error.stack) {
+                bot.logger.debug(error.stack);
+            }
         }
     });
 
-    bot.client.on('entityGone', (entity: any) => {
+    bot.client.on('entityGone', (entity: Entity,) => {
         // ++ 新增 ++ 當掉落物實體消失時，從集合中移除，釋放記憶體
         if (bot.processedDropEntities.has(entity.id)) {
             bot.processedDropEntities.delete(entity.id);
@@ -298,7 +319,7 @@ export function setupEventListeners(bot: BotJava) {
         }
     });
 
-    bot.client.on('entitySpawn', (entity: any) => {
+    bot.client.on('entitySpawn', (entity: Entity,) => {
         if (bot.config.debugMode && entity.name && (entity.name.toLowerCase() === 'item' || entity.name.toLowerCase() === 'item_stack')) {
             bot.logger.info(`🔍 偵測到掉落物實體生成 (名稱: ${entity.name}, ID: ${entity.id})`);
             bot.logger.debug(`[掉落物偵錯-SPAWN] 實體位於 ${entity.position.floored()}`);
@@ -311,13 +332,13 @@ export function setupEventListeners(bot: BotJava) {
             const messageText = jsonMsg.toString();
 
             if (
-                (jsonMsg as any).color === 'red' &&
+                'color' in jsonMsg && (jsonMsg as { color?: string }).color === 'red' && // Added type assertion
                 messageText.includes('You are already trying to connect to a server!') &&
                 !bot.connectionGlitchHandled
             ) {
                 bot.logger.warn('偵測到因伺服器重啟造成的連線狀態鎖死，將強制斷線並依正常程序重連。');
                 bot.connectionGlitchHandled = true;
-                (bot as any)._onDisconnected('connection_glitch', 'Forced disconnect due to server restart lock-up.');
+                bot.onDisconnected('connection_glitch', 'Forced disconnect due to server restart lock-up.');
                 return;
             }
 
@@ -363,18 +384,19 @@ export function setupEventListeners(bot: BotJava) {
             if (cleanMessageText.includes('達到在線賺錢上限')) {
                 bot.logger.info('偵測到「達到在線賺錢上限」訊息，將自動提款...');
                 setTimeout(() => {
-                    (global as any).takeItemFromWindow(bot, '/atm', '虛擬銀行 (ATM)', 9);
+                    takeItemFromWindow(bot, '/atm', '虛擬銀行 (ATM)', 9);
                 }, 1500);
             }
 
             bot.logger.chat(jsonMsg.toAnsi());
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
             bot.logger.warn('攔截到一個可忽略的聊天封包解析錯誤，已忽略以維持連線穩定。');
-            bot.logger.debug(`錯誤詳情: ${error.message}`);
+            bot.logger.debug(`錯誤詳情: ${message}`);
         }
     });
 
-    bot.client.on('kicked', (reason: string, _loggedIn: boolean) => (bot as any)._onDisconnected('kicked', reason));
+    bot.client.on('kicked', (reason: string, _loggedIn: boolean) => bot.onDisconnected('kicked', reason));
 
     // Non-fatal errors are logged here, but do not trigger a disconnect.
     // The 'end' event will handle the actual disconnection if it occurs.
@@ -382,7 +404,7 @@ export function setupEventListeners(bot: BotJava) {
         bot.logger.error(`客戶端錯誤: ${err.message}`);
     });
 
-    bot.client.on('end', (reason: string) => (bot as any)._onDisconnected('end', reason));
+    bot.client.on('end', (reason: string) => bot.onDisconnected('end', reason));
 
     bot.client.on('experience', () => {
         if (!bot.client || !bot.logExpRate) return;

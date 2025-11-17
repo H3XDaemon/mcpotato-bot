@@ -1,6 +1,6 @@
-
 import { Bot } from 'mineflayer';
 import { Item } from 'prismarine-item';
+import { Window } from 'prismarine-windows';
 const ChatMessage = require('prismarine-chat');
 import { sleep, nbtToJson } from './utils.js';
 
@@ -25,7 +25,7 @@ export class GuiManager {
         this.chatParser = ChatMessage(this.bot.registry);
     }
 
-    public async open(command: string, timeout: number = 10000): Promise<any> {
+    public async open(command: string, timeout: number = 10000): Promise<Window | null> {
         // Pre-emptively close any potentially stuck window
         if (this.bot.currentWindow) {
             this.bot.closeWindow(this.bot.currentWindow);
@@ -100,7 +100,7 @@ export class GuiManager {
         return { styledDisplayName, styledLore };
     }
 
-    public getItems(window: any): ParsedItem[] {
+    public getItems(window: Window): ParsedItem[] {
         const items = window.containerItems() as Item[];
         if (!items) return [];
 

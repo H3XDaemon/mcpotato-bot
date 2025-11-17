@@ -1,9 +1,11 @@
 import { logger, Colors } from './utils.js';
 import * as readline from 'readline';
+import { BotJava } from './bot.js';
 import { listWindowItems, takeItemFromWindow, interactiveWindowGui, rideVehicle } from './actions.js';
+import { Item } from 'prismarine-item';
 
 
-export function startConsole(botManager: Map<string, any>, botTagsByIndex: string[]) {
+export function startConsole(botManager: Map<string, BotJava>, botTagsByIndex: string[]) {
     console.log(`
 ${Colors.FgCyan}======================================================${Colors.Reset}`);
     console.log(`${Colors.FgCyan}   Java 版帳號控制台已啟動                                       ${Colors.Reset}`);
@@ -12,7 +14,7 @@ ${Colors.FgCyan}======================================================${Colors.R
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     logger.setRl(rl);
-    let activeBot: any = botManager.size > 0 ? botManager.get(botTagsByIndex[0]) : null;
+    let activeBot: BotJava | null = botManager.size > 0 ? botManager.get(botTagsByIndex[0])! : null;
     if (activeBot) console.log(`預設操作目標已設定為: ${Colors.FgCyan}${activeBot.config.botTag}${Colors.Reset}`);
 
     const setPrompt = () => {
@@ -27,7 +29,7 @@ ${Colors.FgCyan}======================================================${Colors.R
     };
 
     const parseCommandTargets = (args: string[]) => {
-        const targets: any[] = [];
+        const targets: BotJava[] = [];
         const cleanArgs: string[] = [];
         let customTargetFound = false;
 
@@ -44,7 +46,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 const index = parseInt(identifier, 10);
                 if (!isNaN(index) && index > 0 && index <= botTagsByIndex.length) {
                     const botTag = botTagsByIndex[index - 1];
-                    if (botManager.has(botTag)) targets.push(botManager.get(botTag));
+                    if (botManager.has(botTag)) targets.push(botManager.get(botTag)!);
                     else logger.error(`找不到索引為 ${index} 的機器人。`);
                     continue;
                 }
@@ -104,7 +106,7 @@ ${Colors.FgCyan}======================================================${Colors.R
             console.log(`
 --- 機器人狀態列表 ---`);
             botTagsByIndex.forEach((botTag: string, index: number) => {
-                const bot = botManager.get(botTag);
+                const bot = botManager.get(botTag)!;
                 const statusColors: { [key: string]: string } = { 'ONLINE': Colors.FgGreen, 'CONNECTING': Colors.FgYellow, 'OFFLINE': Colors.FgRed, 'STOPPED': Colors.FgMagenta };
                 const color = statusColors[bot.state.status] || Colors.Reset;
                 const isActive = activeBot && bot.config.botTag === activeBot.config.botTag ? ` ${Colors.FgYellow}<-- 目前操作${Colors.Reset}` : '';
@@ -116,7 +118,7 @@ ${Colors.FgCyan}======================================================${Colors.R
         },
         'view': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach(bot => {
+            targets.forEach((bot: BotJava) => {
                 if (!bot.config.enableViewer) {
                     bot.logger.warn('此機器人的監看功能已在設定檔中停用。');
                 } else if (bot.viewer.port) {
@@ -131,7 +133,7 @@ ${Colors.FgCyan}======================================================${Colors.R
 目前選擇的機器人: ${activeBot ? activeBot.config.botTag : '無'}`);
             const identifier = target.startsWith('@') ? target.substring(1) : target;
             const index = parseInt(identifier, 10);
-            let foundBot = null;
+            let foundBot: BotJava | undefined | null = null;
             if (!isNaN(index) && index > 0 && index <= botTagsByIndex.length) {
                 foundBot = botManager.get(botTagsByIndex[index - 1]);
             } else {
@@ -154,12 +156,12 @@ ${Colors.FgCyan}======================================================${Colors.R
         },
         'disconnect': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach((bot: any) => bot.disconnect());
+            targets.forEach((bot: BotJava) => bot.disconnect());
         },
         'exit': () => rl.close(),
         'debug': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach((bot: any) => {
+            targets.forEach((bot: BotJava) => {
                 bot.config.debugMode = !bot.config.debugMode;
                 bot.logger.info(`除錯模式已${bot.config.debugMode ? '開啟' : '關閉'}。`);
             });
@@ -171,7 +173,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 return;
             }
             const message = cleanArgs.join(' ');
-            targets.forEach((bot: any) => bot.runCommand(message));
+            targets.forEach((bot: BotJava) => bot.runCommand(message));
         },
         'work': (args: string[]) => {
             const { targets, cleanArgs } = parseCommandTargets(args);
@@ -182,7 +184,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 return;
             }
 
-            targets.forEach((bot: any) => {
+            targets.forEach((bot: BotJava) => {
                 if (subCommand === 'start') {
                     if (bot.state.status === 'ONLINE') {
                         bot.startWork();
@@ -221,8 +223,9 @@ ${Colors.FgCyan}======================================================${Colors.R
                 if (action === 'wait' && vehicleType === 'cart') {
                     try {
                         await bot.waitForMinecartAndMount();
-                    } catch (error: any) {
-                        bot.logger.error(`等待並騎乘礦車失敗: ${error.message}`);
+                    } catch (error: unknown) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        bot.logger.error(`等待並騎乘礦車失敗: ${message}`);
                     }
                 } else if (vehicleType === 'cart') {
                     await rideVehicle(bot, 'minecart', '礦車');
@@ -233,12 +236,12 @@ ${Colors.FgCyan}======================================================${Colors.R
         },
         'dismount': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach((bot: any) => {
+            targets.forEach((bot: BotJava) => {
                 if (bot.state.status !== 'ONLINE' || !bot.client) {
                     bot.logger.warn('機器人未上線，無法下坐騎。');
                     return;
                 }
-                if (bot.client.vehicle) {
+                if (bot.client.entity.vehicle) { // Fixed: Access vehicle through entity
                     bot.client.dismount();
                     bot.logger.info('已成功下坐騎。');
                 } else {
@@ -276,7 +279,7 @@ ${Colors.FgCyan}======================================================${Colors.R
         },
         'pos': (args: string[]) => {
             const { targets } = parseCommandTargets(args);
-            targets.forEach((bot: any) => {
+            targets.forEach((bot: BotJava) => {
                 if (bot.state.status !== 'ONLINE' || !bot.client) {
                     bot.logger.warn('機器人未上線，無法取得座標。');
                     return;
@@ -302,8 +305,9 @@ ${Colors.FgCyan}======================================================${Colors.R
 
                     bot.logger.info(`伺服器 TPS - [封包]: ${formatTps(packetTps)} | [物理]: ${formatTps(physicsTps)} | [時間]: ${formatTps(gameTimeTps)}`);
 
-                } catch (error: any) {
-                    bot.logger.error(`取得 TPS 時發生錯誤: ${error.message}`);
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    bot.logger.error(`取得 TPS 時發生錯誤: ${message}`);
                 }
             }
         },
@@ -311,7 +315,7 @@ ${Colors.FgCyan}======================================================${Colors.R
             const { targets, cleanArgs } = parseCommandTargets(args);
             const subCommand = cleanArgs[0]?.toLowerCase();
 
-            targets.forEach((bot: any) => {
+            targets.forEach((bot: BotJava) => {
                 if (subCommand === 'toggle') {
                     bot.toggleExpLogging();
                 } else {
@@ -344,8 +348,9 @@ ${Colors.FgCyan}======================================================${Colors.R
                     } else {
                         bot.logger.warn('[測試] 背包是空的，無法執行掉落測試。');
                     }
-                } catch (error: any) {
-                    bot.logger.error(`執行掉落測試時發生錯誤: ${error.message}`);
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    bot.logger.error(`執行掉落測試時發生錯誤: ${message}`);
                 }
             }
         },
@@ -412,13 +417,13 @@ ${Colors.FgCyan}======================================================${Colors.R
 
                 try {
                     const items = bot.client.inventory.items();
-                    const header = `--- [${bot.config.botTag} 的背包] 內容 ---`;
+                    const header = `--- [${bot.config.botTag}] 的背包] 內容 ---`;
                     bot.logger.chat(header);
 
                     if (items.length === 0) {
                         bot.logger.chat('   -> 背包是空的。');
                     } else {
-                        const outputLines = items.map((item: any) => {
+                        const outputLines = items.map((item: Item) => {
                             const itemName = item.displayName;
                             return `     - 欄位 ${String(item.slot).padEnd(3)} | ${itemName} (x${item.count})`;
                         });
@@ -427,8 +432,9 @@ ${Colors.FgCyan}======================================================${Colors.R
                     const footer = `------------------------------------`;
                     bot.logger.chat(footer);
 
-                } catch (error: any) {
-                    bot.logger.error(`執行 "inv list" 時發生錯誤: ${error.message}`);
+                } catch (error: unknown) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    bot.logger.error(`執行 "inv list" 時發生錯誤: ${message}`);
                 }
             }
         },
@@ -496,7 +502,7 @@ ${Colors.FgCyan}======================================================${Colors.R
             const commandToRun = trimmedLine.substring(1);
             if (commandToRun.length > 1) {
                 logger.info(`[ALL] > ${commandToRun}`);
-                botManager.forEach((bot: any) => {
+                botManager.forEach((bot: BotJava) => {
                     if (bot.state.status === 'ONLINE') bot.runCommand(commandToRun);
                 });
             }
@@ -508,7 +514,7 @@ ${Colors.FgCyan}======================================================${Colors.R
                 await handler(args);
             } else if (trimmedLine.startsWith('/')) {
                 const { targets } = parseCommandTargets(args);
-                targets.forEach((bot: any) => bot.runCommand(trimmedLine));
+                targets.forEach((bot: BotJava) => bot.runCommand(trimmedLine));
             }
             else {
                 logger.error(`未知指令: '${command}'。輸入 'help' 查看可用指令。`);

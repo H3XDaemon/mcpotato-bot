@@ -1,6 +1,10 @@
 import { logger, sleep, Colors } from './utils';
 import { BotJava } from './bot'; // Import BotJava for type hinting
 import * as readline from 'readline';
+import { Window } from 'prismarine-windows';
+import { Entity } from 'prismarine-entity';
+import { Block } from 'prismarine-block';
+import { ParsedItem } from './gui'; // Import ParsedItem
 
 export async function listWindowItems(bot: BotJava, command: string, windowName: string): Promise<void> {
     if (bot.isGuiBusy) {
@@ -13,20 +17,20 @@ export async function listWindowItems(bot: BotJava, command: string, windowName:
         return;
     }
 
-    let window: any = null;
+    let window: Window | null = null;
     bot.isGuiBusy = true;
     try {
         window = await gui.open(command);
         if (!window) return;
 
-        const items = gui.getItems(window).filter((item: any) => item.name !== 'gray_stained_glass_pane');
+        const items = gui.getItems(window!).filter((item: ParsedItem) => item.name !== 'gray_stained_glass_pane');
         
         bot.logger.chat(`--- ${bot.config.botTag} 的 ${windowName} 物品列表 ---`);
 
         if (items.length === 0) {
             bot.logger.chat('   -> 介面內沒有可操作的物品。');
         } else {
-            const outputLines = items.map((item: any) => {
+            const outputLines = items.map((item: ParsedItem) => {
                 const slot = `欄位: ${String(item.slot).padEnd(3)}`;
                 const name = item.styledDisplayName || item.displayName;
                 return `- ${slot} | ${name}`;
@@ -35,9 +39,12 @@ export async function listWindowItems(bot: BotJava, command: string, windowName:
         }
         bot.logger.chat(`------------------------------------`);
 
-    } catch (error: any) {
-        bot.logger.error(`處理 ${windowName} 視窗時發生錯誤: ${error.message}`);
-        bot.logger.debug(error.stack);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        bot.logger.error(`處理 ${windowName} 視窗時發生錯誤: ${message}`);
+        if (error instanceof Error && error.stack) {
+            bot.logger.debug(error.stack);
+        }
     } finally {
         if (window && bot.client && bot.client.currentWindow?.id === window.id) {
             bot.client.closeWindow(window);
@@ -58,19 +65,19 @@ export async function takeItemFromWindow(bot: BotJava, command: string, windowNa
         return;
     }
 
-    let window: any = null;
+    let window: Window | null = null;
     bot.isGuiBusy = true;
     try {
         window = await gui.open(command);
         if (!window) return;
 
         const items = gui.getItems(window);
-        const item = items.find((i: any) => i.slot === slot);
+        const item = items.find((i: ParsedItem) => i.slot === slot);
 
         if (!item) {
             bot.logger.error(`欄位 ${slot} 中沒有物品。`);
             if (bot.config.debugMode) {
-                bot.logger.debug("可用的容器欄位:", items.map((i: any) => i.slot));
+                bot.logger.debug("可用的容器欄位:", items.map((i: ParsedItem) => i.slot));
             }
             return;
         }
@@ -80,8 +87,9 @@ export async function takeItemFromWindow(bot: BotJava, command: string, windowNa
         await gui.click(slot, 'left');
         bot.logger.info(`✅ 已成功點擊欄位 ${slot}。`);
 
-    } catch (error: any) {
-        bot.logger.error(`從 ${windowName} 拿取物品時發生錯誤: ${error.message}`);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        bot.logger.error(`從 ${windowName} 拿取物品時發生錯誤: ${message}`);
     } finally {
         if (window && bot.client && bot.client.currentWindow?.id === window.id) {
             await sleep(500);
@@ -103,7 +111,7 @@ export async function interactiveWindowGui(bot: BotJava, command: string, window
         return;
     }
 
-    let window: any = null;
+    let window: Window | null = null;
     bot.isGuiBusy = true;
     try {
         window = await gui.open(command);
@@ -115,12 +123,12 @@ export async function interactiveWindowGui(bot: BotJava, command: string, window
         const guiLoop = async () => {
             console.log(`
 ${Colors.FgCyan}--- ${bot.config.botTag} 的 ${windowName} 互動介面 ---${Colors.Reset}`);
-            const items = gui.getItems(window).filter((item: any) => item.name !== 'gray_stained_glass_pane');
+            const items = gui.getItems(window!).filter((item: ParsedItem) => item.name !== 'gray_stained_glass_pane');
 
             if (items.length === 0) {
                 console.log('   -> 介面是空的。');
             } else {
-                items.forEach((item: any) => {
+                items.forEach((item: ParsedItem) => {
                     const name = item.styledDisplayName || item.displayName;
                     console.log(`  [${String(item.slot).padStart(2, ' ')}] ${name} (x${item.count})`);
                 });
@@ -143,7 +151,7 @@ ${Colors.FgCyan}--- ${bot.config.botTag} 的 ${windowName} 互動介面 ---${Col
                 return;
             }
 
-            const itemToClick = items.find((i: any) => i.slot === slot);
+            const itemToClick = items.find((i: ParsedItem) => i.slot === slot);
 
             if (!itemToClick) {
                 console.log(`${Colors.FgYellow}欄位 ${slot} 是空的或無效。${Colors.Reset}`);
@@ -158,8 +166,9 @@ ${Colors.FgCyan}--- ${bot.config.botTag} 的 ${windowName} 互動介面 ---${Col
 
         await guiLoop();
 
-    } catch (error: any) {
-        bot.logger.error(`互動式 GUI 發生錯誤: ${error.message}`);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        bot.logger.error(`互動式 GUI 發生錯誤: ${message}`);
     } finally {
         if (window && bot.client && bot.client.currentWindow?.id === window.id) {
             bot.client.closeWindow(window);
@@ -168,7 +177,7 @@ ${Colors.FgCyan}--- ${bot.config.botTag} 的 ${windowName} 互動介面 ---${Col
         rl.resume();
         logger.setRl(rl);
         rl.prompt(true);
-        bot.logger.debug(`--- [DEBUG] ${windowName} 互動介面已關閉，鎖已釋放。 ---`);
+        bot.logger.debug(`--- [DEBUG] ${windowName} 介面已關閉，鎖已釋放。 ---`);
     }
 }
 
@@ -180,8 +189,8 @@ export async function rideVehicle(bot: BotJava, vehicleName: string, friendlyNam
     }
 
     // 尋找 10 格內最近的載具
-    const vehicle = client.nearestEntity((entity: any) =>
-        entity.name && entity.name.toLowerCase().includes(vehicleName) && client.entity.position.distanceTo(entity.position) < 10
+    const vehicle = client.nearestEntity((entity: Entity) =>
+        entity.name != null && entity.name.toLowerCase().includes(vehicleName) && client.entity.position.distanceTo(entity.position) < 10
     );
 
     if (!vehicle) {
@@ -192,8 +201,9 @@ export async function rideVehicle(bot: BotJava, vehicleName: string, friendlyNam
     try {
         await client.mount(vehicle);
         bot.logger.info(`✅ 成功坐上${friendlyName}。`);
-    } catch (error: any) {
-        bot.logger.error(`坐上${friendlyName}時發生錯誤: ${error.message}`);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        bot.logger.error(`坐上${friendlyName}時發生錯誤: ${message}`);
     }
 }
 
@@ -217,8 +227,9 @@ export async function waitForMinecartAndMount(bot: BotJava, maxDistance = 5): Pr
             await client.mount(nearestMinecart);
             logger.info('✅ 成功坐上礦車。');
             return;
-        } catch (err: any) {
-            logger.error(`嘗試坐上礦車失敗: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error(`嘗試坐上礦車失敗: ${message}`);
             return;
         }
     }
@@ -237,7 +248,7 @@ export async function waitForMinecartAndMount(bot: BotJava, maxDistance = 5): Pr
             client.removeListener('entityMoved', onEntityEvent);
         };
 
-        const onEntityEvent = async (entity: any) => {
+        const onEntityEvent = async (entity: Entity) => {
             if (entity.name === 'minecart' && client.entity.position.distanceTo(entity.position) <= maxDistance) {
                 logger.info(`偵測到礦車 (ID: ${entity.id}),正在嘗試上車...`);
                 cleanup();
@@ -245,8 +256,9 @@ export async function waitForMinecartAndMount(bot: BotJava, maxDistance = 5): Pr
                     await client.mount(entity);
                     logger.info('✅ 成功坐上礦車。');
                     resolve();
-                } catch (err: any) {
-                    logger.error(`嘗試坐上礦車失敗: ${err.message}`);
+                } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    logger.error(`嘗試坐上礦車失敗: ${message}`);
                     reject(err);
                 }
             }
@@ -297,7 +309,7 @@ export async function activateLeverNearBlock(bot: BotJava, blockTypeName: string
     logger.info(`找到拉桿於 ${leverBlock.position}。`);
 
     // Helper function to get lever state
-    const getLeverState = (block: any) => {
+    const getLeverState = (block: Block) => {
         if (client.supportFeature('blockStateId')) {
             return block.getProperties().powered;
         } else {
@@ -323,8 +335,9 @@ export async function activateLeverNearBlock(bot: BotJava, blockTypeName: string
             logger.warn('切換後無法重新獲取拉桿方塊狀態。');
         }
 
-    } catch (err: any) {
-        logger.error(`切換拉桿失敗: ${err.message}`);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`切換拉桿失敗: ${message}`);
     }
 }
 
@@ -385,7 +398,7 @@ export async function activateLeverByIndex(bot: BotJava, index: number): Promise
     
     // Reuse the state checking logic
     const client = bot.client;
-    const getLeverState = (block: any) => {
+    const getLeverState = (block: Block) => {
         if (client.supportFeature('blockStateId')) {
             return block.getProperties().powered;
         } else {
@@ -409,7 +422,8 @@ export async function activateLeverByIndex(bot: BotJava, index: number): Promise
         } else {
             logger.warn('切換後無法重新獲取拉桿方塊狀態。');
         }
-    } catch (err: any) {
-        logger.error(`切換拉桿失敗: ${err.message}`);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`切換拉桿失敗: ${message}`);
     }
 }

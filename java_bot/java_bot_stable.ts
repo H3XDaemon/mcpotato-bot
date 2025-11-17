@@ -3,8 +3,7 @@ import * as path from 'path';
 import { BotJava } from './src/bot.js';
 import { logger, sleep } from './src/utils.js';
 import { startConsole } from './src/cli.js';
-
-// (global as any).takeItemFromWindow = takeItemFromWindow;
+import { CustomBotOptions } from './src/interfaces.js';
 
 // =================================================================================
 // 4. MAIN EXECUTION (主程式入口)
@@ -19,7 +18,7 @@ async function main() {
         console.error(err);
         console.error('============================================================');
     });
-    process.on('unhandledRejection', (reason: any, _promise: any) => {
+    process.on('unhandledRejection', (reason: unknown, _promise: Promise<unknown>) => {
         logger.unsetRl();
         console.error('\n==================== UNHANDLED REJECTION ====================\n');
         console.error('捕獲到未處理的 Promise Rejection！');
@@ -56,11 +55,11 @@ async function main() {
     const servers = JSON.parse(fs.readFileSync(serversPath, 'utf-8'));
     logger.info('已成功讀取伺服器設定檔。');
 
-    const accounts = JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
+    const accounts: CustomBotOptions[] = JSON.parse(fs.readFileSync(accountsPath, 'utf-8'));
     const botManager = new Map<string, BotJava>();
     const botTagsByIndex: string[] = [];
 
-    const isAnyViewerEnabled = accounts.some((acc: any) => acc.enabled && acc.enableViewer);
+    const isAnyViewerEnabled = accounts.some((acc: CustomBotOptions) => acc.enabled && acc.enableViewer);
 
     if (isAnyViewerEnabled) {
         logger.info('偵測到監看功能已啟用。相關模組將在機器人生成時動態載入。');
@@ -74,6 +73,10 @@ async function main() {
         }
 
         const serverName = config.server;
+        if (!serverName) {
+            logger.error(`[設定錯誤] 機器人 ${config.botTag} 未指定 'server'，已跳過。`);
+            continue;
+        }
         const serverInfo = servers[serverName];
 
         if (!serverInfo) {

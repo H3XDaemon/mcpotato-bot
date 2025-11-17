@@ -4,7 +4,10 @@ import * as util from 'util';
 
 import mineflayer from 'mineflayer';
 
-import { CustomBotOptions } from './interfaces';
+import { Block } from 'prismarine-block';
+import { Item } from 'prismarine-item';
+import { Entity } from 'prismarine-entity';
+import { CustomBotOptions, ILogger, IViewer, IEffect } from './interfaces';
 import { logger, sleep } from './utils';
 import { TPSMonitor } from './tps';
 import { GuiManager } from './gui.js';
@@ -12,17 +15,17 @@ import { TaskManager } from './taskManager.js';
 import { setupEventListeners } from './events';
 export class BotJava {
     taskManager: TaskManager | null;
-    config: any;
+    config: CustomBotOptions;
     gui: GuiManager | null;
     client: mineflayer.Bot | null;
     state: { status: string; };
     reconnectTimeout: NodeJS.Timeout | null;
-    viewer: { port: number | null; instance: any | null; };
+    viewer: { port: number | undefined; instance: IViewer | null; };
     isWorking: boolean;
     workTimeout: NodeJS.Timeout | null;
     antiAfkInterval: NodeJS.Timeout | null;
     effectsLogged: boolean;
-    lastKnownEffects: Map<number, any>;
+    lastKnownEffects: Map<number, IEffect>;
     reconnectAttempts: number[];
     reconnectContext: string;
     serverList: { host: string, port: number }[];
@@ -43,14 +46,14 @@ export class BotJava {
     lastExpSampleTime: number;
     lastExpLogTime: number;
     logExpRate: boolean;
-    logger: any;
+    logger: ILogger;
     tpaWhitelist: Map<string, { allowTpa: boolean, allowTpaHere: boolean }>;
-    lastScannedLevers: any[];
+    lastScannedLevers: Block[];
 
     constructor(botConfig: CustomBotOptions, serverList: { host: string, port: number }[]) {
         const defaultConfig = {
             version: '1.21',
-            auth: 'microsoft',
+            auth: 'microsoft' as 'microsoft' | 'mojang' | 'offline', // Explicitly cast to a literal type
             viewerPort: 0,
             enableViewer: false,
             debugMode: false,
@@ -91,7 +94,7 @@ export class BotJava {
         this.state = { status: 'OFFLINE' };
         this.reconnectTimeout = null;
         this.viewer = {
-            port: null,
+            port: undefined, // Changed to undefined
             instance: null
         };
         
@@ -128,16 +131,13 @@ export class BotJava {
         this.tpaWhitelist = new Map();
         this.lastScannedLevers = [];
 
-        this.logger = Object.fromEntries(
-            Object.keys(logger).map(levelName => [
-                levelName,
-                (...args: any[]) => {
-                    logger.setActiveBot(this);
-                    (logger as any)[levelName](...args);
-                    logger.setActiveBot(null);
-                }
-            ]).filter(entry => typeof entry[1] === 'function')
-        );
+        this.logger = {
+            debug: (...args: unknown[]) => { logger.setActiveBot(this); logger.debug(...args); logger.setActiveBot(null); },
+            info: (...args: unknown[]) => { logger.setActiveBot(this); logger.info(...args); logger.setActiveBot(null); },
+            warn: (...args: unknown[]) => { logger.setActiveBot(this); logger.warn(...args); logger.setActiveBot(null); },
+            error: (...args: unknown[]) => { logger.setActiveBot(this); logger.error(...args); logger.setActiveBot(null); },
+            chat: (...args: unknown[]) => { logger.setActiveBot(this); logger.chat(...args); logger.setActiveBot(null); }
+        };
     }
 
     _loadTpaWhitelist() {
@@ -162,8 +162,9 @@ export class BotJava {
             } else {
                 this.logger.warn('TPA 白名單文件 (config/tpa_whitelist.json) 不存在，將不會自動接受任何 TPA 請求。');
             }
-        } catch (error: any) {
-            this.logger.error(`加載 TPA 白名單時發生錯誤: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.error(`加載 TPA 白名單時發生錯誤: ${message}`);
             this.tpaWhitelist.clear();
         }
     }
@@ -202,10 +203,10 @@ export class BotJava {
                 port: currentServer.port,
                 username: this.config.username,
                 version: this.config.version,
-                auth: 'microsoft',
+                auth: this.config.auth, // Use the auth from config
                 profilesFolder: path.join(__dirname, '..', '..', 'profiles'),
                 hideErrors: true,
-                onMsaCode: (data: any) => {
+                onMsaCode: (data: { verification_uri: string, user_code: string }) => {
                     this.logger.info(`-------------------------------------------------`);
                     this.logger.warn(`[帳號認證] ${this.config.botTag} 需要手動認證！`);
                     this.logger.info(`請在瀏覽器中開啟此網址: ${data.verification_uri}`);
@@ -230,7 +231,7 @@ export class BotJava {
                 const dumpFile = path.join(logDir, `packet_dump_${Date.now()}.log`);
                 this.logger.info(`[Debug] Packet logging enabled. Dumping to: ${dumpFile}`);
 
-                this.client._client.on('packet', (data: any, metadata: any) => {
+                this.client._client.on('packet', (data: unknown, metadata: { name: string }) => {
                     const ignoredPackets = [
                         'keep_alive', 'position', 'look', 'position_look', 'rel_entity_move', 'entity_look', 'entity_head_look', 'entity_metadata', 'update_time', 'entity_velocity',
                         'add_entity', 'animation', 'block_event', 'block_update', 'boss_event', 'bundle', 'damage_event', 'entity_event', 'sync_entity_position',
@@ -254,9 +255,10 @@ export class BotJava {
             }
 
             this._setupEventListeners();
-        } catch (error: any) {
-            this.logger.error(`建立機器人時發生初始錯誤: ${error.message}`);
-            this._onDisconnected('initialization_error', error);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.error(`建立機器人時發生初始錯誤: ${message}`);
+            this.onDisconnected('initialization_error', error instanceof Error ? error : new Error(String(error)));
         }
     }
 
@@ -294,8 +296,9 @@ export class BotJava {
             }
             this.viewer.port = this.config.viewerPort;
             this.logger.info(`✅ 監看視窗已在 http://localhost:${this.viewer.port} 上運行`);
-        } catch (error: any) {
-            this.logger.error(`啟動監看視窗時發生錯誤: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.error(`啟動監看視窗時發生錯誤: ${message}`);
             this.logger.warn('此機器人的監看功能將被停用以避免後續錯誤。');
             this.config.enableViewer = false;
         }
@@ -308,7 +311,7 @@ export class BotJava {
         }
         this.isWorking = true;
         this.logger.info('✅ 工作模式已啟動。將持續維持 Omen 效果。');
-        this._maintainOmenEffect();
+        this.maintainOmenEffect();
     }
 
     stopWork(reason = '手動停止') {
@@ -335,8 +338,9 @@ export class BotJava {
                 this.logger.info(`  - ${name} (ID: ${effect.id})`);
             });
             this.logger.info(`--- [DEBUG] 效果列表結束 ---`);
-        } catch (e: any) {
-            this.logger.error('無法獲取效果列表:', e.message);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.logger.error('無法獲取效果列表:', message);
         }
     }
 
@@ -369,13 +373,14 @@ export class BotJava {
                 return hasEffect;
             });
 
-        } catch (e: any) {
-            this.logger.error('檢查 Omen 效果時發生錯誤:', e.message);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.logger.error('檢查 Omen 效果時發生錯誤:', message);
             return false;
         }
     }
 
-    async _maintainOmenEffect() {
+    async maintainOmenEffect() {
         if (!this.isWorking) {
             return;
         }
@@ -387,7 +392,7 @@ export class BotJava {
                 if (!await this._hasOmenEffect()) {
                     this.logger.info('未偵測到 Omen 效果，開始補充...');
                     
-                    const ominousBottle = this.client.inventory.items().find((item: any) => item.name === 'ominous_bottle');
+                    const ominousBottle = this.client.inventory.items().find((item: Item) => item.name === 'ominous_bottle');
 
                     if (!ominousBottle) {
                         this.logger.warn('庫存中找不到 Ominous Bottle，將在下次檢查時重試。');
@@ -407,7 +412,7 @@ export class BotJava {
                                 .map(name => mcData.effectsByName[name]?.id)
                                 .filter(Boolean);
 
-                            const onEffect = (entity: any, effect: any) => {
+                            const onEffect = (entity: Entity, effect: IEffect) => {
                                 if (this.client && entity === this.client.entity && targetEffectIds.includes(effect.id)) {
                                     clearTimeout(timeout); // 清除超時計時器
                                     this.client.removeListener('entityEffect', onEffect);
@@ -442,11 +447,12 @@ export class BotJava {
                      this.logger.debug('Omen 效果存在，無需操作。');
                 }
             }
-        } catch (error: any) {
-            this.logger.error(`在工作循環中發生錯誤: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.error(`在工作循環中發生錯誤: ${message}`);
         } finally {
             if (this.isWorking) {
-                this.workTimeout = setTimeout(() => this._maintainOmenEffect(), this.config.omenCheckInterval);
+                this.workTimeout = setTimeout(() => this.maintainOmenEffect(), this.config.omenCheckInterval);
             }
         }
     }
@@ -455,7 +461,7 @@ export class BotJava {
         setupEventListeners(this);
     }
 
-    _onDisconnected(source: string, reason: string | Error) {
+    onDisconnected(source: string, reason: string | Error) {
         if (this.isDisconnecting || this.state.status === 'STOPPED') {
             return;
         }
@@ -484,17 +490,17 @@ export class BotJava {
         if (reason) {
             if (reason instanceof Error) {
                 reasonText = reason.message;
-                if ((reason as any).code === 'ECONNRESET') {
+                if ('code' in reason && reason.code === 'ECONNRESET') {
                     isNetworkError = true;
-                    reasonText = `網路連線被重設 (${(reason as any).code})`;
+                    reasonText = `網路連線被重設 (${reason.code})`;
                 } else if (reasonText.includes('timed out')) {
                     isNetworkError = true;
                     reasonText = `客戶端超時 (Keep-Alive 未收到回應)`;
                 }
             } else if (typeof reason === 'string') {
                 reasonText = reason;
-            } else if (typeof (reason as any).toAnsi === 'function') {
-                reasonText = (reason as any).toAnsi().replace(/§[0-9;]*m/g, '');
+            } else if (typeof (reason as { toAnsi?: () => string }).toAnsi === 'function') {
+                reasonText = (reason as { toAnsi: () => string }).toAnsi().replace(/§[0-9;]*m/g, '');
             } else {
                 try { reasonText = JSON.stringify(reason); } 
                 catch (e) { reasonText = util.inspect(reason); }
@@ -759,8 +765,9 @@ export class BotJava {
                 await bot.mount(nearestMinecart);
                 this.logger.info('✅ 成功坐上礦車。');
                 return;
-            } catch (err: any) {
-                this.logger.error(`嘗試坐上礦車失敗: ${err.message}`);
+            } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                this.logger.error(`嘗試坐上礦車失敗: ${message}`);
                 return;
             }
         }
@@ -784,7 +791,7 @@ export class BotJava {
                 bot.removeListener('entityMoved', onEntityEvent);
             };
 
-            const onEntityEvent = async (entity: any) => {
+            const onEntityEvent = async (entity: Entity) => {
                 if (isResolved) return; // 防止重複處理
                 
                 if (entity.name === 'minecart' && bot.entity.position.distanceTo(entity.position) <= maxDistance) {
@@ -795,8 +802,9 @@ export class BotJava {
                         await bot.mount(entity);
                         this.logger.info('✅ 成功坐上礦車。');
                         resolve();
-                    } catch (err: any) {
-                        this.logger.error(`嘗試坐上礦車失敗: ${err.message}`);
+                    } catch (err: unknown) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        this.logger.error(`嘗試坐上礦車失敗: ${message}`);
                         reject(err);
                     }
                 }
@@ -847,7 +855,7 @@ export class BotJava {
         this.logger.info(`找到拉桿於 ${leverBlock.position}。`);
 
         // Helper function to get lever state
-        const getLeverState = (block: any) => {
+        const getLeverState = (block: Block) => {
             if (bot.supportFeature('blockStateId')) {
                 return block.getProperties().powered;
             } else {
@@ -873,8 +881,9 @@ export class BotJava {
                 this.logger.warn('切換後無法重新獲取拉桿方塊狀態。');
             }
 
-        } catch (err: any) {
-            this.logger.error(`切換拉桿失敗: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.error(`切換拉桿失敗: ${message}`);
         }
     }
 
@@ -935,7 +944,7 @@ export class BotJava {
         
         // Reuse the state checking logic
         const bot = this.client;
-        const getLeverState = (block: any) => {
+        const getLeverState = (block: Block) => {
             if (bot.supportFeature('blockStateId')) {
                 return block.getProperties().powered;
             } else {
@@ -959,8 +968,9 @@ export class BotJava {
             } else {
                 this.logger.warn('切換後無法重新獲取拉桿方塊狀態。');
             }
-        } catch (err: any) {
-            this.logger.error(`切換拉桿失敗: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.error(`切換拉桿失敗: ${message}`);
         }
     }
 

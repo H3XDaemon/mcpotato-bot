@@ -1,7 +1,7 @@
-
 import { BotJava } from './bot.js';
 import { BotTask } from './task.js';
 import { sleep } from './utils.js';
+import { Window } from 'prismarine-windows';
 
 /**
  * A sample task for interacting with the Auction House.
@@ -17,7 +17,7 @@ export const auctionHouseTask: BotTask = {
 
         bot.isGuiBusy = true;
         bot.logger.info(`[${this.name}] Starting scan...`);
-        let window: any = null;
+        let window: Window | null = null;
         try {
             // Pre-emptive close for any stuck windows
             if (bot.client.currentWindow) {
@@ -27,11 +27,14 @@ export const auctionHouseTask: BotTask = {
             }
 
             window = await gui.open('/ah');
-            const items = gui.getItems(window);
-            bot.logger.info(`[${this.name}] Found ${items.length} items on the first page.`);
+            if (window) {
+                const items = gui.getItems(window);
+                bot.logger.info(`[${this.name}] Found ${items.length} items on the first page.`);
+            }
             // TODO: Add logic to find specific items or navigate pages.
-        } catch (err: any) {
-            bot.logger.error(`[${this.name}] Error during execution: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            bot.logger.error(`[${this.name}] Error during execution: ${message}`);
         } finally {
             if (window && bot.client && bot.client.currentWindow?.id === window.id) {
                 bot.client.closeWindow(window);
@@ -56,7 +59,7 @@ export const playerWarpTask: BotTask = {
 
         bot.isGuiBusy = true;
         bot.logger.info(`[${this.name}] Starting scan...`);
-        let window: any = null;
+        let window: Window | null = null;
         try {
             // Pre-emptive close for any stuck windows
             if (bot.client.currentWindow) {
@@ -66,11 +69,14 @@ export const playerWarpTask: BotTask = {
             }
 
             window = await gui.open('/pw');
-            const items = gui.getItems(window);
-            bot.logger.info(`[${this.name}] Found ${items.length} player warps.`);
+            if (window) {
+                const items = gui.getItems(window);
+                bot.logger.info(`[${this.name}] Found ${items.length} player warps.`);
+            }
             // TODO: Add logic to find specific warps.
-        } catch (err: any) {
-            bot.logger.error(`[${this.name}] Error during execution: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            bot.logger.error(`[${this.name}] Error during execution: ${message}`);
         } finally {
             if (window && bot.client && bot.client.currentWindow?.id === window.id) {
                 bot.client.closeWindow(window);
