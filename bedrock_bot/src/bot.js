@@ -329,18 +329,23 @@ class Bot {
                 this._checkAndWithdraw();
             }
 
-            if (rawMessage.includes('請求您傳送過去')) {
-                const strippedMessage = rawMessage.replace(/§./g, '');
-                const match = strippedMessage.match(/(.+?)\s請求您傳送過去/);
+            const strippedMessage = rawMessage.replace(/§./g, '');
+            const tpaRequestTypes = [
+                { type: 'TPA', regex: /(.+?)\s請求您傳送過去/ },
+                { type: 'TPAHere', regex: /(.+?)\s請求傳送過來。?/ }
+            ];
 
+            for (const requestType of tpaRequestTypes) {
+                const match = strippedMessage.match(requestType.regex);
                 if (match && match[1]) {
                     const playerName = match[1].trim();
                     if (this.tpaWhitelist.includes(playerName)) {
-                        this.logger.info(`偵測到來自白名單玩家 ${playerName} 的 TPA 請求，自動接受。`);
+                        this.logger.info(`偵測到來自白名單玩家 ${playerName} 的 ${requestType.type} 請求，自動接受。`);
                         this.runCommand('tpyes');
                     } else {
-                        this.logger.info(`偵測到來自非白名單玩家 ${playerName} 的 TPA 請求，已忽略。`);
+                        this.logger.info(`偵測到來自非白名單玩家 ${playerName} 的 ${requestType.type} 請求，已忽略。`);
                     }
+                    break; 
                 }
             }
         }
