@@ -29,5 +29,22 @@
       "enabled": true,
       "delayMinutes": 60
     }
+  },
+  {
+    "enabled": true,
+    "botTag": "JavaBot_3",
+    "server": "mcpotato_main",
+    "version": "1.21.8",
+    "username": "h3xd",
+    "enableViewer": false,
+    "startWorkOnLogin": false,
+    "antiAfk": {
+      "enabled": true,
+      "intervalMinutes": 4.5
+    },
+      "reconnectOnDuplicateLogin": {
+      "enabled": true,
+      "delayMinutes": 60
+    }
   }
 ]
