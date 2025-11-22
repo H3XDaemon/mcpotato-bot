@@ -157,6 +157,9 @@ class Bot {
                         SkinResourcePatchDecoded: JSON.parse(
                             Buffer.from(this.skinData.SkinResourcePatch, 'base64').toString('utf-8')
                         ),
+                        SkinGeometryDataLength: this.skinData.SkinGeometryData?.length || 0,
+                        SkinGeometryDataPreview: this.skinData.SkinGeometryData ?
+                            JSON.parse(Buffer.from(this.skinData.SkinGeometryData, 'base64').toString('utf-8')) : null,
                         CapeId: this.skinData.CapeId,
                         PersonaSkin: this.skinData.PersonaSkin,
                         PremiumSkin: this.skinData.PremiumSkin

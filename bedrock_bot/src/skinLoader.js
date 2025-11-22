@@ -2,6 +2,128 @@ const fs = require('fs');
 const path = require('path');
 const { PNG } = require('pngjs');
 
+// 標準人形 geometry 定義 (wide arms)
+const GEOMETRY_STANDARD = {
+    "format_version": "1.12.0",
+    "minecraft:geometry": [
+        {
+            "description": {
+                "identifier": "geometry.humanoid.custom",
+                "texture_width": 64,
+                "texture_height": 64,
+                "visible_bounds_width": 1,
+                "visible_bounds_height": 2,
+                "visible_bounds_offset": [0, 1, 0]
+            },
+            "bones": [
+                {
+                    "name": "body",
+                    "pivot": [0, 24, 0],
+                    "cubes": [
+                        { "origin": [-4, 12, -2], "size": [8, 12, 4], "uv": [16, 16] }
+                    ]
+                },
+                {
+                    "name": "head",
+                    "pivot": [0, 24, 0],
+                    "cubes": [
+                        { "origin": [-4, 24, -4], "size": [8, 8, 8], "uv": [0, 0] }
+                    ]
+                },
+                {
+                    "name": "leftArm",
+                    "pivot": [5, 22, 0],
+                    "cubes": [
+                        { "origin": [4, 12, -2], "size": [4, 12, 4], "uv": [32, 48] }
+                    ]
+                },
+                {
+                    "name": "rightArm",
+                    "pivot": [-5, 22, 0],
+                    "cubes": [
+                        { "origin": [-8, 12, -2], "size": [4, 12, 4], "uv": [40, 16] }
+                    ]
+                },
+                {
+                    "name": "leftLeg",
+                    "pivot": [1.9, 12, 0],
+                    "cubes": [
+                        { "origin": [-0.1, 0, -2], "size": [4, 12, 4], "uv": [16, 48] }
+                    ]
+                },
+                {
+                    "name": "rightLeg",
+                    "pivot": [-1.9, 12, 0],
+                    "cubes": [
+                        { "origin": [-3.9, 0, -2], "size": [4, 12, 4], "uv": [0, 16] }
+                    ]
+                }
+            ]
+        }
+    ]
+};
+
+// Slim 人形 geometry 定義 (slim arms)
+const GEOMETRY_SLIM = {
+    "format_version": "1.12.0",
+    "minecraft:geometry": [
+        {
+            "description": {
+                "identifier": "geometry.humanoid.customSlim",
+                "texture_width": 64,
+                "texture_height": 64,
+                "visible_bounds_width": 1,
+                "visible_bounds_height": 2,
+                "visible_bounds_offset": [0, 1, 0]
+            },
+            "bones": [
+                {
+                    "name": "body",
+                    "pivot": [0, 24, 0],
+                    "cubes": [
+                        { "origin": [-4, 12, -2], "size": [8, 12, 4], "uv": [16, 16] }
+                    ]
+                },
+                {
+                    "name": "head",
+                    "pivot": [0, 24, 0],
+                    "cubes": [
+                        { "origin": [-4, 24, -4], "size": [8, 8, 8], "uv": [0, 0] }
+                    ]
+                },
+                {
+                    "name": "leftArm",
+                    "pivot": [5, 21.5, 0],
+                    "cubes": [
+                        { "origin": [4, 11.5, -2], "size": [3, 12, 4], "uv": [32, 48] }
+                    ]
+                },
+                {
+                    "name": "rightArm",
+                    "pivot": [-5, 21.5, 0],
+                    "cubes": [
+                        { "origin": [-7, 11.5, -2], "size": [3, 12, 4], "uv": [40, 16] }
+                    ]
+                },
+                {
+                    "name": "leftLeg",
+                    "pivot": [1.9, 12, 0],
+                    "cubes": [
+                        { "origin": [-0.1, 0, -2], "size": [4, 12, 4], "uv": [16, 48] }
+                    ]
+                },
+                {
+                    "name": "rightLeg",
+                    "pivot": [-1.9, 12, 0],
+                    "cubes": [
+                        { "origin": [-3.9, 0, -2], "size": [4, 12, 4], "uv": [0, 16] }
+                    ]
+                }
+            ]
+        }
+    ]
+};
+
 class SkinLoader {
     static async loadSkin(skinPath) {
         return new Promise((resolve, reject) => {
@@ -51,13 +173,32 @@ class SkinLoader {
             const armSize = options.armSize === 'slim' ? 'slim' : 'wide';
             const skinId = options.skinId || `custom_skin_${Date.now()}`;
 
-            // 極簡方案：只提供核心數據
-            // bedrock-protocol 會與默認數據合併
+            // 根據手臂類型選擇正確的geometry標識符和定義
+            const geometryId = armSize === 'slim'
+                ? 'geometry.humanoid.customSlim'
+                : 'geometry.humanoid.custom';
+
+            const geometryDefinition = armSize === 'slim' ? GEOMETRY_SLIM : GEOMETRY_STANDARD;
+
+            // 建立SkinResourcePatch (必須以base64編碼的JSON格式)
+            const resourcePatch = {
+                geometry: {
+                    default: geometryId
+                }
+            };
+            const skinResourcePatch = Buffer.from(JSON.stringify(resourcePatch)).toString('base64');
+
+            // 建立SkinGeometry (必須以base64編碼的JSON格式)
+            const skinGeometryData = Buffer.from(JSON.stringify(geometryDefinition)).toString('base64');
+
+            // 建立完整的皮膚資料物件
             const skinData = {
                 SkinId: skinId,
                 SkinData: skinDataBase64,
                 SkinImageHeight: height,
                 SkinImageWidth: width,
+                SkinResourcePatch: skinResourcePatch,
+                SkinGeometryData: skinGeometryData,
                 ArmSize: armSize
             };
 
@@ -65,7 +206,7 @@ class SkinLoader {
             console.log(`  - SkinId: ${skinId}`);
             console.log(`  - 尺寸: ${width}x${height}`);
             console.log(`  - 手臂類型: ${armSize}`);
-            console.log(`  - 策略: 使用協議默認處理`);
+            console.log(`  - Geometry: ${geometryId}`);
 
             return skinData;
         } catch (error) {
@@ -102,7 +243,7 @@ class SkinLoader {
     }
 
     static validateSkinData(skinData) {
-        const requiredFields = ['SkinId', 'SkinData', 'SkinImageHeight', 'SkinImageWidth', 'ArmSize'];
+        const requiredFields = ['SkinId', 'SkinData', 'SkinImageHeight', 'SkinImageWidth', 'SkinResourcePatch', 'SkinGeometryData', 'ArmSize'];
         for (const field of requiredFields) {
             if (!(field in skinData)) throw new Error(`缺少欄位: ${field}`);
         }
@@ -111,6 +252,8 @@ class SkinLoader {
         if (typeof skinData.SkinData !== 'string' || skinData.SkinData.length === 0) throw new Error('SkinData 必須是非空 Base64');
         if (!Number.isInteger(skinData.SkinImageWidth) || skinData.SkinImageWidth <= 0) throw new Error('SkinImageWidth 必須是正整數');
         if (!Number.isInteger(skinData.SkinImageHeight) || skinData.SkinImageHeight <= 0) throw new Error('SkinImageHeight 必須是正整數');
+        if (typeof skinData.SkinResourcePatch !== 'string' || skinData.SkinResourcePatch.length === 0) throw new Error('SkinResourcePatch 必須是非空 Base64');
+        if (typeof skinData.SkinGeometryData !== 'string' || skinData.SkinGeometryData.length === 0) throw new Error('SkinGeometryData 必須是非空 Base64');
         if (!['wide', 'slim'].includes(skinData.ArmSize)) throw new Error(`ArmSize 必須是 wide 或 slim`);
 
         console.log('✓ 皮膚資料驗證通過');
