@@ -1,0 +1,24 @@
+{
+  "SkinId": "custom_skin_1763812443231",
+  "SkinData": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVFRn/Gh... (truncated)",
+  "SkinImageHeight": 32,
+  "SkinImageWidth": 64,
+  "SkinResourcePatch": "eyJnZW9tZXRyeSI6eyJkZWZhdWx0IjoiZ2VvbWV0cnkuaHVtYW5vaWQuY3VzdG9tIn19",
+  "CapeId": "",
+  "CapeData": "",
+  "CapeImageHeight": 0,
+  "CapeImageWidth": 0,
+  "SkinColor": "#0",
+  "ArmSize": "wide",
+  "PersonaSkin": false,
+  "PremiumSkin": false,
+  "CapeOnClassicSkin": false,
+  "PersonaPieces": [],
+  "PieceTintColors": [],
+  "AnimatedImageData": [],
+  "SkinResourcePatchDecoded": {
+    "geometry": {
+      "default": "geometry.humanoid.custom"
+    }
+  }
+}

@@ -1,8 +1,20 @@
 {
   "mcpotato_bedrock": {
-    "primary": { "host": "proxy.mcpotato.xyz", "port": 45632 },
+    "primary": {
+      "host": "proxy.mcpotato.xyz",
+      "port": 45632
+    },
     "backups": [
-      { "host": "be.mcpotato.xyz", "port": 19132 }
+      {
+        "host": "be.mcpotato.xyz",
+        "port": 19132
+      }
     ]
+  },
+  "localhost": {
+    "primary": {
+      "host": "localhost",
+      "port": 19132
+    }
   }
 }

@@ -9,6 +9,11 @@
       "enabled": true,
       "intervalMinutes": 4.55,
       "withdrawThreshold": 1135
+    },
+    "skin": {
+      "enabled": true,
+      "path": "./skins/zero.png",
+      "armSize": "wide"
     }
   },
   {
@@ -34,6 +39,10 @@
       "intervalMinutes": 4.65,
       "withdrawThreshold": 3500
     },
-    "debug": true
+    "skin": {
+      "enabled": true,
+      "path": "./skins/zero.png",
+      "armSize": "wide"
+    }
   }
 ]

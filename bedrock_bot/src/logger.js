@@ -37,50 +37,63 @@ class ReadlineConsoleTransport extends Transport {
 
 // printf 函式現在只負責格式化，不產生任何副作用
 const consoleFormat = winston.format.printf(({ level, message, timestamp, botTag, isChatMessage }) => {
-    const botPrefix = botTag ? `[${Colors.FgCyan}${botTag}${Colors.Reset}] ` : '';
-    // [核心修正] 根據 isChatMessage 旗標來決定是否顯示日誌級別
-    if (isChatMessage) {
-        return `[${timestamp}] ${botPrefix}${message}`;
-    }
-    return `[${timestamp}] [${level}] ${botPrefix}${message}`;
+  const botPrefix = botTag ? `[${Colors.FgCyan}${botTag}${Colors.Reset}] ` : '';
+  // [核心修正] 根據 isChatMessage 旗標來決定是否顯示日誌級別
+  if (isChatMessage) {
+    return `[${timestamp}] ${botPrefix}${message}`;
+  }
+  return `[${timestamp}] [${level}] ${botPrefix}${message}`;
 });
 
 const logger = winston.createLogger({
-    level: process.env.DEBUG ? 'debug' : 'info',
-    format: winston.format.combine(
-        winston.format(info => {
-            info.timestamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).substring(0, 19);
-            return info;
-        })(),
-        winston.format.errors({ stack: true }),
-        winston.format.splat()
-    ),
-    transports: [
-        // 使用我們自訂的 transport
-        new ReadlineConsoleTransport({
-            format: winston.format.combine(
-                winston.format.colorize(), // 先上色
-                consoleFormat              // 再套用我們的格式
-            )
-        }),
-        new winston.transports.File({ filename: 'error.log', level: 'error' }),
-        new winston.transports.File({ filename: 'combined.log' })
-    ]
+  level: process.env.DEBUG ? 'debug' : 'info',
+  format: winston.format.combine(
+    winston.format(info => {
+      info.timestamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Taipei' }).substring(0, 19);
+      return info;
+    })(),
+    winston.format.errors({ stack: true }),
+    winston.format.splat()
+  ),
+  transports: [
+    // 使用我們自訂的 transport
+    new ReadlineConsoleTransport({
+      format: winston.format.combine(
+        winston.format.colorize(), // 先上色
+        consoleFormat              // 再套用我們的格式
+      )
+    }),
+    new winston.transports.File({
+      filename: 'error.log',
+      level: 'error',
+      format: winston.format.combine(
+        winston.format.uncolorize(),
+        consoleFormat
+      )
+    }),
+    new winston.transports.File({
+      filename: 'combined.log',
+      format: winston.format.combine(
+        winston.format.uncolorize(),
+        consoleFormat
+      )
+    })
+  ]
 });
 
 logger.setRl = (rl) => {
-    rlInterface = rl;
+  rlInterface = rl;
 };
 
 const packetLogger = winston.createLogger({
-    level: 'debug',
-    format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.printf(({ timestamp, message }) => `[${timestamp}] ${message}`)
-    ),
-    transports: [
-        new winston.transports.File({ filename: 'logs/packets.log', options: { flags: 'w' } })
-    ]
+  level: 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.printf(({ timestamp, message }) => `[${timestamp}] ${message}`)
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'logs/packets.log', options: { flags: 'w' } })
+  ]
 });
 
 module.exports = { logger, packetLogger };

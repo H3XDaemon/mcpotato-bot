@@ -36,7 +36,12 @@ async function main() {
     }
 
     const botManager = new BotManager(itemMapping, tpaWhitelist);
-    const accountsPath = path.join(__dirname, 'config', 'accounts.json');
+
+    // 支援透過命令列參數指定帳號設定檔
+    const configFileName = process.argv[2] || 'accounts.json';
+    const accountsPath = path.join(__dirname, 'config', configFileName);
+
+    logger.info(`使用帳號設定檔: ${accountsPath}`);
     botManager.loadAccounts(accountsPath);
     botManager.connectEnabledBots();
 

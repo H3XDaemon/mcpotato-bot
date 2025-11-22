@@ -1,6 +1,7 @@
 const { createClient } = require('bedrock-protocol');
 const minecraftData = require('minecraft-data');
 const { logger, sleep, parseMinecraftColors, getAppShutdown, packetLogger } = require('./utils.js');
+const { SkinLoader } = require('./skinLoader.js');
 const { QueueProcessor } = require('./queue.js');
 const { ATM_OPERATION_TIMEOUT } = require('./atm.js');
 const { HOME_OPERATION_TIMEOUT } = require('./home.js');
@@ -36,15 +37,15 @@ class Bot {
 
         this.serverList = this.config.serverList || [];
         this.currentServerIndex = 0;
-        
+
         this.reconnectAttempts = [];
         this.lastSuccessfulLoginTime = null;
         this.quickDisconnectCount = 0;
         this.consecutiveConnectionFails = 0;
 
         this.uiQueue = new QueueProcessor(this.config.botTag);
-
         this.logger = logger.child({ botTag: this.config.botTag });
+        this.skinData = null;
     }
 
     /**
@@ -62,10 +63,10 @@ class Bot {
 
             if (mcLang[itemKey]) return mcLang[itemKey];
             if (mcLang[blockKey]) return mcLang[blockKey];
-            
+
             return keyName.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
         }
-        
+
         return `未知物品 (ID: ${networkId})`;
     }
 
@@ -86,13 +87,90 @@ class Bot {
         const serverTag = this.currentServerIndex === 0 ? '主要' : `備用-${this.currentServerIndex}`;
         this.logger.info(`[${serverTag}] 正在連接至 ${currentServer.host}:${currentServer.port}...`);
 
+        // === 載入並驗證皮膚 ===
+        // 只在設定啟用且尚未載入的情況下載入皮膚
+        if (this.config.skin?.enabled && this.config.skin?.path && !this.skinData) {
+            try {
+                this.logger.info(`正在載入皮膚檔案: ${this.config.skin.path}`);
+
+                // 載入皮膚資料
+                this.skinData = await SkinLoader.loadAndCreateSkinData(
+                    this.config.skin.path,
+                    {
+                        armSize: this.config.skin.armSize || 'wide',
+                        skinId: this.config.skin.skinId || undefined
+                    }
+                );
+
+                // 驗證皮膚資料
+                try {
+                    SkinLoader.validateSkinData(this.skinData);
+                    this.logger.info(`✓ 皮膚資料驗證通過，將使用自訂皮膚連線`);
+                } catch (validationError) {
+                    this.logger.error(`✗ 皮膚資料驗證失敗: ${validationError.message}`);
+                    this.skinData = null;
+                }
+
+            } catch (error) {
+                this.logger.error(`✗ 載入皮膚時發生錯誤: ${error.message}`);
+                this.skinData = null;
+            }
+        } else if (this.config.skin?.enabled && !this.config.skin?.path) {
+            this.logger.warn('皮膚功能已啟用，但未指定皮膚檔案路徑');
+        }
+
         const usernameForLogin = this.config.offline ? '.' + this.config.botTag : this.config.botTag;
-        this.client = createClient({
-            host: currentServer.host, port: currentServer.port, version: this.config.version,
-            offline: this.config.offline, username: usernameForLogin,
-            profilesFolder: this.config.profilePath, connectTimeout: 10000,
+
+        // 建立客戶端選項
+        const clientOptions = {
+            host: currentServer.host,
+            port: currentServer.port,
+            version: this.config.version,
+            offline: this.config.offline,
+            username: usernameForLogin,
+            profilesFolder: this.config.profilePath,
+            connectTimeout: 10000,
             followPort: false
-        });
+        };
+
+        // 如果有有效的皮膚資料，添加到連線選項中
+        if (this.skinData) {
+            clientOptions.skinData = this.skinData;
+            this.logger.info(`已套用自訂皮膚 (ID: ${this.skinData.SkinId})`);
+
+            // [Debug] 輸出簡化的皮膚資料結構供檢查
+            if (this.config.debug) {
+                try {
+                    const fs = require('fs');
+                    const path = require('path');
+                    const debugPath = path.join(process.cwd(), 'debug_skin_data.json');
+
+                    // 建立精簡的debug資料，避免輸出過長的Base64
+                    const debugData = {
+                        SkinId: this.skinData.SkinId,
+                        SkinImageWidth: this.skinData.SkinImageWidth,
+                        SkinImageHeight: this.skinData.SkinImageHeight,
+                        ArmSize: this.skinData.ArmSize,
+                        SkinDataLength: this.skinData.SkinData.length,
+                        SkinDataPreview: this.skinData.SkinData.substring(0, 50) + '...',
+                        SkinResourcePatch: this.skinData.SkinResourcePatch,
+                        SkinResourcePatchDecoded: JSON.parse(
+                            Buffer.from(this.skinData.SkinResourcePatch, 'base64').toString('utf-8')
+                        ),
+                        CapeId: this.skinData.CapeId,
+                        PersonaSkin: this.skinData.PersonaSkin,
+                        PremiumSkin: this.skinData.PremiumSkin
+                    };
+
+                    fs.writeFileSync(debugPath, JSON.stringify(debugData, null, 2));
+                    this.logger.debug(`已將皮膚資料結構輸出至: ${debugPath}`);
+                } catch (debugError) {
+                    this.logger.warn(`無法輸出皮膚除錯資料: ${debugError.message}`);
+                }
+            }
+        }
+
+        this.client = createClient(clientOptions);
         this._setupEventListeners();
     }
 
@@ -106,7 +184,7 @@ class Bot {
         }
 
         this.state.status = 'STOPPED'; // 設定狀態為 STOPPED
-        
+
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
@@ -213,7 +291,7 @@ class Bot {
             this.client = null;
             return;
         }
-        
+
         this.client = null;
         this.stopAutoWithdraw();
 
@@ -345,7 +423,7 @@ class Bot {
                     } else {
                         this.logger.info(`偵測到來自非白名單玩家 ${playerName} 的 ${requestType.type} 請求，已忽略。`);
                     }
-                    break; 
+                    break;
                 }
             }
         }
@@ -412,24 +490,24 @@ class Bot {
         if (this.state.status !== 'ONLINE' || !this.client) {
             throw new Error('機器人未連線，無法開啟UI。');
         }
-    
+
         return new Promise((resolve, reject) => {
             let listener;
             let timeoutHandle;
-    
+
             const cleanup = () => {
                 if (listener) this.client?.removeListener('inventory_content', listener);
                 if (timeoutHandle) clearTimeout(timeoutHandle);
             };
-    
+
             listener = (packet) => {
                 if (packet.window_id === 'inventory') return;
-    
+
                 const isTargetContainer = packet.input?.some(item => {
                     const customName = item?.extra?.nbt?.nbt?.value?.display?.value?.Name?.value || '';
                     return customName.includes(identifierKeyword);
                 });
-    
+
                 if (isTargetContainer) {
                     this.logger.debug(`成功鎖定 ${command} 主容器！ (Window ID: ${packet.window_id})`);
                     cleanup();
@@ -439,11 +517,11 @@ class Bot {
                     this.logger.debug(`收到非目標容器封包 (ID: ${packet.window_id})，繼續等待...`);
                 }
             };
-    
+
             this.client.on('inventory_content', listener);
             this.runCommand(command);
             this.logger.debug(`已發送 /${command} 指令，正在等待伺服器回應...`);
-    
+
             timeoutHandle = setTimeout(() => {
                 cleanup();
                 reject(new Error(`等待 ${command} 內容超時 (${timeout / 1000}秒)，找不到包含關鍵字 "${identifierKeyword}" 的UI。`));
@@ -458,7 +536,7 @@ class Bot {
         }
         const requestId = this.requestIdCounter--;
         const destination = actionType === 'take' ? { container_id: 'cursor', slot: 0 } : { container_id: 'inventory', slot: 0 };
-        
+
         const payload = {
             requests: [{
                 request_id: requestId,
@@ -492,30 +570,30 @@ class Bot {
         }
         this.logger.info(`已將 [查看 ATM 內容] 任務加入隊列。`);
         this.uiQueue.addTask(this, async () => {
-                let atmData;
-                try {
-                    atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
-                    if (!atmData || !atmData.items) return;
-                    let listOutput = `--- ${this.config.botTag} 的 ATM 物品列表 ---\n`;
-                    let hasVisibleItems = false;
-                    atmData.items.forEach(item => {
-                        if (item && item.network_id !== 0 && item.network_id !== -649) {
-                            hasVisibleItems = true;
-                            const itemName = this._getItemName(item.network_id);
-                            const customName = item.extra?.nbt?.nbt?.value?.display?.value?.Name?.value || '';
-                            listOutput += `- 欄位: ${String(item.slot).padEnd(2)} | ${itemName.padEnd(20)} | ${parseMinecraftColors(customName)}\n`;
-                        }
-                    });
-                    if (!hasVisibleItems) listOutput += "ATM 看起來是空的。\n";
-                    console.log("\n" + listOutput.trim());
-                } catch (error) {
-                    this.logger.error('[ATM隊列] 任務 "查看 ATM 內容" 執行失敗:', error);
-                } finally {
-                    if (this.client && atmData?.windowId) {
-                        this.client.queue('container_close', { window_id: atmData.windowId });
+            let atmData;
+            try {
+                atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
+                if (!atmData || !atmData.items) return;
+                let listOutput = `--- ${this.config.botTag} 的 ATM 物品列表 ---\n`;
+                let hasVisibleItems = false;
+                atmData.items.forEach(item => {
+                    if (item && item.network_id !== 0 && item.network_id !== -649) {
+                        hasVisibleItems = true;
+                        const itemName = this._getItemName(item.network_id);
+                        const customName = item.extra?.nbt?.nbt?.value?.display?.value?.Name?.value || '';
+                        listOutput += `- 欄位: ${String(item.slot).padEnd(2)} | ${itemName.padEnd(20)} | ${parseMinecraftColors(customName)}\n`;
                     }
+                });
+                if (!hasVisibleItems) listOutput += "ATM 看起來是空的。\n";
+                console.log("\n" + listOutput.trim());
+            } catch (error) {
+                this.logger.error('[ATM隊列] 任務 "查看 ATM 內容" 執行失敗:', error);
+            } finally {
+                if (this.client && atmData?.windowId) {
+                    this.client.queue('container_close', { window_id: atmData.windowId });
                 }
-            }, `查看 ATM 內容 (${this.config.botTag})`);
+            }
+        }, `查看 ATM 內容 (${this.config.botTag})`);
     }
 
     performTakeAction(slot, actionType) {
@@ -525,27 +603,27 @@ class Bot {
         }
         this.logger.info(`已將 [從欄位 ${slot} 執行 "${actionType}"] 任務加入隊列。`);
         this.uiQueue.addTask(this, async () => {
-                let atmData;
-                try {
-                    atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
-                    if (!atmData || !atmData.items) return;
-                    const item = atmData.items.find(i => i.slot === slot);
-                    if (!item || item.network_id === -649 || item.network_id === 0) {
-                        this.logger.error(`欄位 ${slot} 上沒有可操作的項目。`);
-                    } else {
-                        this.logger.debug(`在欄位 ${slot} 找到目標: ${this._getItemName(item.network_id)} (StackID: ${item.stack_id})`);
-                        if (this._sendStackRequest(item, actionType, 'container', atmData.windowId)) {
-                            await sleep(500);
-                        }
-                    }
-                } catch (error) {
-                    this.logger.error(`[ATM隊列] 任務 "從 ATM 欄位 ${slot} 拿取物品" 執行失敗:`, error);
-                } finally {
-                    if (this.client && atmData?.windowId) {
-                        this.client.queue('container_close', { window_id: atmData.windowId });
+            let atmData;
+            try {
+                atmData = await this.getUiContents('atm', '餘額', ATM_OPERATION_TIMEOUT);
+                if (!atmData || !atmData.items) return;
+                const item = atmData.items.find(i => i.slot === slot);
+                if (!item || item.network_id === -649 || item.network_id === 0) {
+                    this.logger.error(`欄位 ${slot} 上沒有可操作的項目。`);
+                } else {
+                    this.logger.debug(`在欄位 ${slot} 找到目標: ${this._getItemName(item.network_id)} (StackID: ${item.stack_id})`);
+                    if (this._sendStackRequest(item, actionType, 'container', atmData.windowId)) {
+                        await sleep(500);
                     }
                 }
-            }, `從 ATM 欄位 ${slot} 拿取物品 (${this.config.botTag})`);
+            } catch (error) {
+                this.logger.error(`[ATM隊列] 任務 "從 ATM 欄位 ${slot} 拿取物品" 執行失敗:`, error);
+            } finally {
+                if (this.client && atmData?.windowId) {
+                    this.client.queue('container_close', { window_id: atmData.windowId });
+                }
+            }
+        }, `從 ATM 欄位 ${slot} 拿取物品 (${this.config.botTag})`);
     }
 
     startAutoWithdraw() {
@@ -583,7 +661,7 @@ class Bot {
             this.logger.debug('機器人離線或程式正在關閉，跳過此次提款檢查。');
             return;
         }
-        const alreadyInQueue = this.uiQueue.getQueue().some(item => 
+        const alreadyInQueue = this.uiQueue.getQueue().some(item =>
             item.bot.config.botTag === this.config.botTag && item.description.includes('自動提款')
         );
         if (alreadyInQueue) {
@@ -593,7 +671,7 @@ class Bot {
         this.logger.info('偵測到提款需求，已將任務加入隊列。');
         this.uiQueue.addTask(this, () => this._executeWithdrawal(), `自動提款檢查 (${this.config.botTag})`);
     }
-    
+
     async _executeWithdrawal() {
         let atmData;
         try {
@@ -620,7 +698,7 @@ class Bot {
                 atmData = null; // 防止 finally 區塊重複關閉
             }
         } catch (error) {
-             this.logger.error('[UI隊列] 任務 "自動提款檢查" 執行失敗:', error);
+            this.logger.error('[UI隊列] 任務 "自動提款檢查" 執行失敗:', error);
         } finally {
             if (this.client && atmData?.windowId) {
                 this.client.queue('container_close', { window_id: atmData.windowId });
@@ -658,19 +736,19 @@ class Bot {
                 }
 
                 this.logger.info(`提款 $${denToClick.amount} (剩餘目標: $${remainingAmount})`);
-                
+
                 if (!this._sendStackRequest(itemToClick, 'take', 'container', currentWindowId)) {
                     this.logger.error(`點擊欄位 ${denToClick.slot} 失敗，將在下次檢查時重試。`);
                     break;
                 }
 
                 const updatePacket = await this._waitForNextUiContent(ATM_OPERATION_TIMEOUT);
-                
+
                 currentWindowId = updatePacket.window_id;
                 currentItems = (updatePacket.input || []).map((item, index) => ({ ...item, slot: item.slot ?? index }));
-                
+
                 remainingAmount -= denToClick.amount;
-                
+
                 await sleep(800);
             }
         } catch (error) {
@@ -690,39 +768,39 @@ class Bot {
         }
         this.logger.info(`已將 [列出家列表] 任務加入隊列。`);
         this.uiQueue.addTask(this, async () => {
-                let homeData;
-                try {
-                    homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
-                    if (!homeData || !homeData.items) {
-                        this.logger.error('無法獲取 Home 介面內容，任務中止。');
-                        return;
-                    }
-
-                    let listOutput = `--- ${this.config.botTag} 的 Home 列表 ---\n`;
-                    let hasHomes = false;
-                    
-                    homeData.items.forEach(item => {
-                        const customName = item.extra?.nbt?.nbt?.value?.display?.value?.Name?.value || '';
-                        if (item && item.network_id !== 0 && item.network_id !== -161 && item.network_id !== -643 && customName && !customName.includes('操作說明')) {
-                            hasHomes = true;
-                            const cleanName = parseMinecraftColors(customName).replace(/\\x1b\\[[0-9;]*m/g, '').trim();
-                            listOutput += `- ${cleanName}\n`;
-                        }
-                    });
-
-                    if (!hasHomes) {
-                        listOutput += "找不到任何家。\n";
-                    }
-                    console.log("\n" + listOutput.trim());
-
-                } catch (error) {
-                    this.logger.error('[UI隊列] 任務 "列出家列表" 執行失敗:', error);
-                } finally {
-                    if (this.client && homeData?.windowId) {
-                        this.client.queue('container_close', { window_id: homeData.windowId });
-                    }
+            let homeData;
+            try {
+                homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
+                if (!homeData || !homeData.items) {
+                    this.logger.error('無法獲取 Home 介面內容，任務中止。');
+                    return;
                 }
-            }, `列出家列表 (${this.config.botTag})`);
+
+                let listOutput = `--- ${this.config.botTag} 的 Home 列表 ---\n`;
+                let hasHomes = false;
+
+                homeData.items.forEach(item => {
+                    const customName = item.extra?.nbt?.nbt?.value?.display?.value?.Name?.value || '';
+                    if (item && item.network_id !== 0 && item.network_id !== -161 && item.network_id !== -643 && customName && !customName.includes('操作說明')) {
+                        hasHomes = true;
+                        const cleanName = parseMinecraftColors(customName).replace(/\\x1b\\[[0-9;]*m/g, '').trim();
+                        listOutput += `- ${cleanName}\n`;
+                    }
+                });
+
+                if (!hasHomes) {
+                    listOutput += "找不到任何家。\n";
+                }
+                console.log("\n" + listOutput.trim());
+
+            } catch (error) {
+                this.logger.error('[UI隊列] 任務 "列出家列表" 執行失敗:', error);
+            } finally {
+                if (this.client && homeData?.windowId) {
+                    this.client.queue('container_close', { window_id: homeData.windowId });
+                }
+            }
+        }, `列出家列表 (${this.config.botTag})`);
     }
 
     teleportHome(homeName) {
@@ -732,36 +810,36 @@ class Bot {
         }
         this.logger.info(`已將 [傳送到 ${homeName}] 任務加入隊列。`);
         this.uiQueue.addTask(this, async () => {
-                let homeData;
-                try {
-                    homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
-                    if (!homeData || !homeData.items) {
-                        this.logger.error('無法獲取 Home 介面內容，任務中止。');
-                        return;
-                    }
-
-                    const homeItem = homeData.items.find(item => {
-                        if (!item.extra?.nbt) return false;
-                        const customName = item.extra.nbt.nbt.value.display?.value?.Name?.value || '';
-                        const cleanName = customName.replace(/§[0-9a-fk-or]/g, '');
-                        return cleanName.toLowerCase() === homeName.toLowerCase();
-                    });
-
-                    if (homeItem) {
-                        this.logger.debug(`找到家 "${homeName}"，於欄位 ${homeItem.slot} 準備點擊傳送...`);
-                        this._sendStackRequest(homeItem, 'take', 'container', homeData.windowId);
-                        await sleep(500);
-                    } else {
-                        this.logger.error(`在 Home 介面中找不到名為 "${homeName}" 的家。`);
-                    }
-                } catch (error) {
-                    this.logger.error(`[UI隊列] 任務 "傳送到 ${homeName}" 執行失敗:`, error);
-                } finally {
-                    if (this.client && homeData?.windowId) {
-                       this.logger.debug(`Home 任務完成，Window ID ${homeData.windowId} 應由伺服器關閉。`);
-                    }
+            let homeData;
+            try {
+                homeData = await this.getUiContents('homelist', '操作說明:', HOME_OPERATION_TIMEOUT);
+                if (!homeData || !homeData.items) {
+                    this.logger.error('無法獲取 Home 介面內容，任務中止。');
+                    return;
                 }
-            }, `傳送到 ${homeName} (${this.config.botTag})`);
+
+                const homeItem = homeData.items.find(item => {
+                    if (!item.extra?.nbt) return false;
+                    const customName = item.extra.nbt.nbt.value.display?.value?.Name?.value || '';
+                    const cleanName = customName.replace(/§[0-9a-fk-or]/g, '');
+                    return cleanName.toLowerCase() === homeName.toLowerCase();
+                });
+
+                if (homeItem) {
+                    this.logger.debug(`找到家 "${homeName}"，於欄位 ${homeItem.slot} 準備點擊傳送...`);
+                    this._sendStackRequest(homeItem, 'take', 'container', homeData.windowId);
+                    await sleep(500);
+                } else {
+                    this.logger.error(`在 Home 介面中找不到名為 "${homeName}" 的家。`);
+                }
+            } catch (error) {
+                this.logger.error(`[UI隊列] 任務 "傳送到 ${homeName}" 執行失敗:`, error);
+            } finally {
+                if (this.client && homeData?.windowId) {
+                    this.logger.debug(`Home 任務完成，Window ID ${homeData.windowId} 應由伺服器關閉。`);
+                }
+            }
+        }, `傳送到 ${homeName} (${this.config.botTag})`);
     }
 }
 
