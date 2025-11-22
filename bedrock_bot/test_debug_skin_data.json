@@ -1,0 +1,192 @@
+{
+  "SkinId": "test_bot_simulation",
+  "SkinImageWidth": 64,
+  "SkinImageHeight": 32,
+  "ArmSize": "wide",
+  "SkinDataLength": 10924,
+  "SkinDataPreview": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVFRn/Gh...",
+  "SkinResourcePatch": "eyJnZW9tZXRyeSI6eyJkZWZhdWx0IjoiZ2VvbWV0cnkuaHVtYW5vaWQuY3VzdG9tIn19",
+  "SkinResourcePatchDecoded": {
+    "geometry": {
+      "default": "geometry.humanoid.custom"
+    }
+  },
+  "SkinGeometryLength": 1096,
+  "SkinGeometryPreview": {
+    "format_version": "1.12.0",
+    "minecraft:geometry": [
+      {
+        "description": {
+          "identifier": "geometry.humanoid.custom",
+          "texture_width": 64,
+          "texture_height": 64,
+          "visible_bounds_width": 1,
+          "visible_bounds_height": 2,
+          "visible_bounds_offset": [
+            0,
+            1,
+            0
+          ]
+        },
+        "bones": [
+          {
+            "name": "body",
+            "pivot": [
+              0,
+              24,
+              0
+            ],
+            "cubes": [
+              {
+                "origin": [
+                  -4,
+                  12,
+                  -2
+                ],
+                "size": [
+                  8,
+                  12,
+                  4
+                ],
+                "uv": [
+                  16,
+                  16
+                ]
+              }
+            ]
+          },
+          {
+            "name": "head",
+            "pivot": [
+              0,
+              24,
+              0
+            ],
+            "cubes": [
+              {
+                "origin": [
+                  -4,
+                  24,
+                  -4
+                ],
+                "size": [
+                  8,
+                  8,
+                  8
+                ],
+                "uv": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          },
+          {
+            "name": "leftArm",
+            "pivot": [
+              5,
+              22,
+              0
+            ],
+            "cubes": [
+              {
+                "origin": [
+                  4,
+                  12,
+                  -2
+                ],
+                "size": [
+                  4,
+                  12,
+                  4
+                ],
+                "uv": [
+                  32,
+                  48
+                ]
+              }
+            ]
+          },
+          {
+            "name": "rightArm",
+            "pivot": [
+              -5,
+              22,
+              0
+            ],
+            "cubes": [
+              {
+                "origin": [
+                  -8,
+                  12,
+                  -2
+                ],
+                "size": [
+                  4,
+                  12,
+                  4
+                ],
+                "uv": [
+                  40,
+                  16
+                ]
+              }
+            ]
+          },
+          {
+            "name": "leftLeg",
+            "pivot": [
+              1.9,
+              12,
+              0
+            ],
+            "cubes": [
+              {
+                "origin": [
+                  -0.1,
+                  0,
+                  -2
+                ],
+                "size": [
+                  4,
+                  12,
+                  4
+                ],
+                "uv": [
+                  16,
+                  48
+                ]
+              }
+            ]
+          },
+          {
+            "name": "rightLeg",
+            "pivot": [
+              -1.9,
+              12,
+              0
+            ],
+            "cubes": [
+              {
+                "origin": [
+                  -3.9,
+                  0,
+                  -2
+                ],
+                "size": [
+                  4,
+                  12,
+                  4
+                ],
+                "uv": [
+                  0,
+                  16
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
