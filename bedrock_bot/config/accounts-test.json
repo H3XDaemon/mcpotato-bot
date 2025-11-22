@@ -12,8 +12,8 @@
     },
     "skin": {
       "enabled": true,
-      "path": "./skins/zero.png",
-      "armSize": "wide"
+      "path": "./skins/deer.png",
+      "armSize": "slim"
     }
   }
 ]
